@@ -1,4 +1,7 @@
-.jac/
+.jac/*
+!.jac/data/
+.jac/data/*.db-wal
+.jac/data/*.db-shm
 node_modules/
 .vscode/
 .idea/
