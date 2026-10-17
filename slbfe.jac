@@ -120,12 +120,19 @@ def _post(form: dict[str, str]) -> RegisterResult {
 """Search the register by licence number (the number printed on genuine ads)."""
 def search_by_licence(licence_no: str) -> RegisterResult {
     digits = re.sub(r"\D", "", licence_no);
+    if not digits {
+        return RegisterResult(ok=True, records=[], checked_at=datetime.now().strftime("%Y-%m-%d %H:%M"));
+    }
     return _post({"an": digits, "agency": "", "address": "", "District": "", "country": "", "Search": "Search"});
 }
 
 """Search the register by any part of the agency name."""
 def search_by_name(name: str) -> RegisterResult {
-    return _post({"an": "", "agency": name.strip(), "address": "", "District": "", "country": "", "Search223": "Search"});
+    n = name.strip();
+    if not n {
+        return RegisterResult(ok=True, records=[], checked_at=datetime.now().strftime("%Y-%m-%d %H:%M"));
+    }
+    return _post({"an": "", "agency": n, "address": "", "District": "", "country": "", "Search223": "Search"});
 }
 
 with entry:__main__ {

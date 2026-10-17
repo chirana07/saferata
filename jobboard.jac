@@ -196,6 +196,10 @@ walker:pub PostJob {
         worker_fee_lkr: float = 0.0;
 
     can post with Root entry {
+        if not self.title.strip() or not self.licence_no.strip() or not self.description.strip() {
+            report PostResult(ok=False, message="Job title, licence number, and description are required.");
+            disengage;
+        }
         steps: list[Step] = [Step(agent="Gatekeeper", action="verify_licence", detail=f"checking licence {self.licence_no} on the live SLBFE register")];
         reg = search_by_licence(self.licence_no);
         if not reg.ok {
@@ -348,6 +352,10 @@ walker:pub AddReview {
         evidence: str;
 
     can add with Root entry {
+        if not self.text.strip() {
+            report PostResult(ok=False, message="Review text cannot be empty.");
+            disengage;
+        }
         target = jobj(self.job_id);
         if not isinstance(target, Job) {
             report PostResult(ok=False, message="Job not found.");
