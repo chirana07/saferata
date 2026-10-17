@@ -133,7 +133,7 @@ walker:pub PostJob {
         ag = reg.records[0];
         steps.append(Step(agent="Gatekeeper", action="verified", detail=f"{ag.name}, valid until {ag.valid_upto}"));
         text = f"{ag.name} (SLBFE Licence No {ag.licence_no})\nJob: {self.title} - {self.country}\nSalary: {self.salary}\n{self.description}\nContact: {self.contact_phone}";
-        inv = Investigate(text=text, answers=["This job was posted directly on the SafeRata job board by the licensed agency; answer from the posting only."]);
+        inv = Investigate(text=text, answers=["This job was posted directly on the SafeRata job board by the licensed agency; answer from the posting only."], quiet=True);
         root spawn inv;
         job = Job(title=self.title, country=self.country, salary=self.salary, description=self.description,
             licence_no=ag.licence_no, agency_name=ag.name, contact_phone=self.contact_phone, posted_at=_now());
@@ -205,7 +205,7 @@ walker:pub AddReview {
             job.score = new_score;
             job.band = _band_for(new_score);
             steps.append(Step(agent="Supervisor", action="re-score", detail=f"{credible_fraud} credible fraud report(s): {old_band} -> {job.band} ({new_score}/100)"));
-            if job.band == "DANGER" {
+            if job.band == "DANGER" and old_band != "DANGER" {
                 warned = 0;
                 for ct in [job -->[?:Contact]] {
                     for o in [ct <--[?:Offer]] {

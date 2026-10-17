@@ -83,17 +83,40 @@ def _now -> str {
     return datetime.now().strftime("%Y-%m-%d %H:%M");
 }
 
-def _clean_name(s: str) -> str {
-    return re.sub(r"\b(pvt|ltd|private|limited|\(|\)|\.)\b", " ", s.lower()).replace("(", " ").replace(")", " ").replace(".", " ").split() |> " ".join;
+glob NAME_STOPWORDS: list[str] = ["pvt", "ltd", "private", "limited", "company", "co", "the", "and", "agency", "agencies", "recruitment", "recruiters", "foreign", "employment", "manpower", "services", "lanka", "sri"];
+
+def _name_tokens(s: str) -> list[str] {
+    words = re.sub(r"[^a-z0-9 ]+", " ", s.lower()).split();
+    return [w for w in words if w not in NAME_STOPWORDS];
 }
 
+"""Agency names match if their letters agree ignoring spacing/suffixes (A T C GLOBAL = ATC Global),
+or most of their distinctive words overlap."""
 def _names_match(a: str, b: str) -> bool {
-    x = _clean_name(a);
-    y = _clean_name(b);
-    if not x or not y {
+    ta = _name_tokens(a);
+    tb = _name_tokens(b);
+    if not ta or not tb {
         return False;
     }
-    return x in y or y in x;
+    ja = "".join(ta);
+    jb = "".join(tb);
+    short = ja if len(ja) <= len(jb) else jb;
+    long = jb if len(ja) <= len(jb) else ja;
+    if ja == jb or (len(short) >= 6 and short in long and len(short) / len(long) >= 0.5) {
+        return True;
+    }
+    common = len(set(ta) & set(tb));
+    return common / max(len(set(ta)), len(set(tb))) >= 0.6;
+}
+
+"""Most distinctive word of a name, used as the register's 'any part of name' query."""
+def _search_word(name: str) -> str {
+    toks = sorted(_name_tokens(name), key=lambda (t: str) { -len(t); });
+    return toks[0] if toks else name;
+}
+
+def _norm_text(s: str) -> str {
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip();
 }
 
 def _agency_summary(a: AgencyRecord) -> str {
@@ -118,6 +141,8 @@ walker:pub Investigate {
         community: list[str] = [],
         community_flags: list[RedFlag] = [],
         questions: list[str] = [],
+        licence_not_found: bool = False,
+        quiet: bool = False,
         result: CaseReport | None = None;
 
     def log(agent: str, action: str, detail: str) {
@@ -136,6 +161,7 @@ walker:pub Investigate {
         }
         if not r.records {
             self.register_status = RegisterStatus.NOT_FOUND;
+            self.licence_not_found = True;
             self.log("Lead Investigator", "lookup_licence", f"#{licence_no}: NOT on the SLBFE register");
             return f"Licence number {licence_no} is NOT on the SLBFE register of valid agencies.";
         }
@@ -153,7 +179,7 @@ walker:pub Investigate {
     }
 
     def lookup_agency_name(name: str) -> str {
-        r = search_by_name(name);
+        r = search_by_name(_search_word(name));
         self.register_checked_at = r.checked_at;
         if not r.ok {
             self.register_status = RegisterStatus.UNREACHABLE;
@@ -168,7 +194,16 @@ walker:pub Investigate {
             self.log("Lead Investigator", "lookup_agency_name", f"'{name}': no licensed agency with this name ({len(r.records)} partial matches)");
             return f"No licensed agency named '{name}' on the SLBFE register.";
         }
+        if self.register_status == RegisterStatus.NAME_MISMATCH {
+            self.log("Lead Investigator", "lookup_agency_name", f"'{name}' is licensed as {hits[0].licence_no}, but the printed licence number belongs to another agency");
+            return f"'{name}' is a licensed agency (licence {hits[0].licence_no}), but the licence number printed in the offer belongs to a different agency.";
+        }
         self.agency = hits[0];
+        if self.licence_not_found {
+            self.register_status = RegisterStatus.NAME_MISMATCH;
+            self.log("Lead Investigator", "lookup_agency_name", f"'{name}' is licensed as {hits[0].licence_no}, but the licence number printed in the offer does not exist");
+            return f"'{name}' is licensed under licence {hits[0].licence_no}, but the licence number printed in the offer is NOT on the register. " + _agency_summary(hits[0]);
+        }
         self.register_status = RegisterStatus.VERIFIED;
         self.log("Lead Investigator", "lookup_agency_name", f"'{name}' = licence {hits[0].licence_no}, valid until {hits[0].valid_upto}");
         return "Licensed. " + _agency_summary(hits[0]);
@@ -200,7 +235,12 @@ walker:pub Investigate {
             self.log("Lead Investigator", "community_reports", f"{value}: no earlier reports");
             return f"No earlier checks involve {value}.";
         }
-        offers = [o for o in [found[0] <--[?:Offer]]];
+        mine = _norm_text(self.text);
+        offers = [o for o in [found[0] <--[?:Offer]] if _norm_text(o.text) != mine];
+        if not offers {
+            self.log("Lead Investigator", "community_reports", f"{value}: only earlier checks of this same offer");
+            return f"No other offers involve {value}.";
+        }
         danger = [o for o in offers if o.verdict == "DANGER"];
         line = f"{value} appeared in {len(offers)} earlier checked offer(s); {len(danger)} judged DANGER.";
         self.community.append(line);
@@ -245,13 +285,13 @@ walker:pub Investigate {
             );
         } elif self.register_status == RegisterStatus.NAME_MISMATCH and self.agency is not None {
             self.register_flags.append(
-                RedFlag(code="LICENCE_MISMATCH", title="Licence number belongs to a different agency", points=35,
-                    evidence=f"Licence {self.agency.licence_no} = {self.agency.name}",
+                RedFlag(code="LICENCE_MISMATCH", title="Printed licence number does not match the agency", points=35,
+                    evidence=f"Offer prints licence {self.facts.licence_no if self.facts is not None else '?'}; register: {self.agency.name} = licence {self.agency.licence_no}",
                     explanation="Scammers often print a real licence number that belongs to another company.",
                     source=SRC_REGISTER, agent="Lead Investigator")
             );
         }
-        if self.agency is not None and self.facts is not None {
+        if self.agency is not None and self.facts is not None and self.register_status == RegisterStatus.VERIFIED {
             ag = self.agency;
             odd = [p for p in [normalise_phone(x) for x in self.facts.phones] if p and p not in ag.phones];
             odd_mail = [e.lower().strip() for e in self.facts.emails if e.lower().strip() != ag.email];
@@ -319,7 +359,12 @@ walker:pub Investigate {
             }
             offer ++> node_ag;
         }
-        values = [(normalise_phone(p), "phone") for p in f.phones if normalise_phone(p)] + [(e.lower().strip(), "email") for e in f.emails if e.strip()];
+        official: list[str] = [];
+        if self.agency is not None {
+            official = self.agency.phones + [self.agency.email];
+        }
+        values = [(normalise_phone(p), "phone") for p in f.phones if normalise_phone(p) and normalise_phone(p) not in official]
+            + [(e.lower().strip(), "email") for e in f.emails if e.strip() and e.lower().strip() not in official];
         alerts = 0;
         for (v, kind) in values {
             found = [c for c in [root -->[?:Contact]] if c.value == v];
@@ -359,7 +404,9 @@ walker:pub Investigate {
             self.log("Supervisor", "pause", f"needs {len(self.questions)} answer(s) from the person before the verdict");
             self.result = CaseReport(status="needs_input", questions=self.questions, steps=self.steps, facts=facts,
                 agency=self.agency, register_status=self.register_status.name);
-            report self.result;
+            if not self.quiet {
+                report self.result;
+            }
             disengage;
         }
 
@@ -425,7 +472,9 @@ walker:pub Investigate {
             flags=final, removed=removed, prosecution=prosecution, defence=defence, judge=ruling.summary, advice=advice,
             agency=self.agency, register_status=self.register_status.name, community=self.community, alerts_sent=alerts,
             facts=facts, sources=sources, steps=self.steps, offer_id=offer_id);
-        report self.result;
+        if not self.quiet {
+            report self.result;
+        }
     }
 }
 
@@ -468,4 +517,12 @@ walker:pub RecentChecks {
                 score=o.score, created_at=o.created_at, alerts=[a.message for a in [o -->[?:Alert]]]);
         }
     }
+}
+
+test "agency names match across spacing and suffixes" {
+    assert _names_match("ATC Global Holdings", "A T C GLOBAL HOLDINGS (PVT) LTD");
+    assert _names_match("A T C GLOBAL HOLDINGS (PVT) LTD", "A T C GLOBAL HOLDINGS (PVT) LTD");
+    assert not _names_match("Lanka Gulf Dream Recruiters", "A T C GLOBAL HOLDINGS (PVT) LTD");
+    assert not _names_match("Global Pvt Ltd", "ACTIVE GLOBAL SPECIALISED CAREGIVERS LANKA (PVT) LTD");
+    assert _search_word("A T C GLOBAL HOLDINGS (PVT) LTD") == "holdings";
 }

@@ -21,6 +21,10 @@ glob CASES: list[EvalCase] = [
         text="LANKA GULF DREAM RECRUITERS - SLBFE Licence 9998. Kuwait cleaning jobs, salary KWD 120. Pay Rs. 90,000 now to block your seat, balance after visa. Call 0771234567"),
     EvalCase(name="Dubai housemaid on visit visa", expected=["DANGER", "BE CAREFUL"],
         text="Housemaid job in Dubai, salary AED 1500. Go on 3-month visit visa first, madam will arrange work visa later. Sponsor will keep passport for safety. Contact Mrs. Silva 0712223344, pay Rs. 60,000 for ticket to her account."),
+    EvalCase(name="Real agency name, wrong licence no.", expected=["DANGER", "BE CAREFUL"],
+        text="ATC Global Holdings - SLBFE Licence 3053. Qatar driver, employment visa, QAR 1900. Pay Rs. 40,000 at our office after contract. Call 0112818268"),
+    EvalCase(name="Genuine, name written differently", expected=["LOOKS SAFE"],
+        text="ATC Global Holdings is recruiting light vehicle drivers for Qatar. Employment visa, QAR 2000, contract before departure, payments only at office with receipt. Call 0112818268"),
     EvalCase(name="Russia security job", expected=["DANGER", "BE CAREFUL"],
         text="Security guard / helper jobs in RUSSIA. Salary USD 2500 + bonus. Free flight, free food. No experience, age 20-45 men only. Contact on WhatsApp +7 925 000 1122. Tourist visa provided. Leave within 1 week.")
 ];
