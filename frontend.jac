@@ -36,14 +36,36 @@ def agent_color(agent: str) -> str {
     return palette.get(agent, "#34495e");
 }
 
+glob STAGES: list[str] = [
+    "Extractor is reading the offer",
+    "Lead Investigator is checking the live SLBFE register",
+    "Comparing contacts with the agency's registered numbers",
+    "Searching community reports in the graph",
+    "Specialists are reviewing (trafficking, contract, fees)",
+    "Critic is checking every quote against the offer",
+    "Prosecutor and Defender are arguing the case",
+    "Judge is deciding; Advisor is writing next steps"
+];
+
 def:pub app -> JsxElement {
     has text: str = "",
         busy: bool = False,
+        started: float = 0.0,
+        now: float = 0.0,
         outcome: CaseReport | None = None,
         answers: list[str] = [],
         tab: str = "check",
         refresh: int = 0,
         error: str = "";
+
+    can with [busy] entry {
+        if busy {
+            started = Date.now();
+            now = Date.now();
+            timer = setInterval(lambda { now = Date.now(); }, 500);
+            return lambda { clearInterval(timer); };
+        }
+    }
 
     async def investigate -> None;
     async def submit_answers -> None;
@@ -81,7 +103,14 @@ def:pub app -> JsxElement {
                 <button onClick={lambda -> None { text = SAMPLE_GENUINE; }}>Genuine offer</button>
             </div>
             {if busy {
-                <p style={{"color": "#1b4f72"}}>Extractor, Lead Investigator, specialists, Prosecutor, Defender, Judge and Advisor are working. This takes 30-90 seconds.</p>
+                <ol id="progress" style={{"color": "#1b4f72", "marginBottom": "0"}}>
+                    {[
+                        <li key={i} style={{"opacity": "1" if i <= int((now - started) / 2800) else "0.35", "fontWeight": "700" if i == min(int((now - started) / 2800), len(STAGES) - 1) else "400"}}>
+                            {("✓ " if i < min(int((now - started) / 2800), len(STAGES) - 1) else "") + st}
+                        </li>
+                        for (i, st) in enumerate(STAGES)
+                    ]}
+                </ol>
             }}
             {if error {
                 <p style={{"color": "#c0392b"}}>{error}</p>
