@@ -50,9 +50,12 @@ def profile_pct -> int {
     return int(100 * len([k for k in keys if prof(k, "") and prof(k, "") != "0"]) / len(keys));
 }
 
-def:pub Section(n: str, title: str, children: any = None) -> JsxElement {
-    return <section className="grid gap-4 border-t border-border py-8 md:grid-cols-[180px_1fr]">
-        <div><p className="font-mono text-xs text-muted-foreground">{n}</p><h2 className="mt-1 text-xl font-bold">{title}</h2></div>
+def:pub Section(category: str, title: str, children: any = None) -> JsxElement {
+    return <section className="grid gap-4 border-t border-border py-8 md:grid-cols-[200px_1fr]">
+        <div>
+            <span className="eyebrow text-[10px] text-primary-deep">{category}</span>
+            <h2 className="mt-1 text-xl font-bold tracking-tight">{title}</h2>
+        </div>
         <div>{children}</div>
     </section>;
 }
@@ -66,25 +69,25 @@ def:pub JobCard(job: JobView, matchv: int, reasons: list[str], variant: str, onO
         <div className="flex items-start justify-between gap-3">
             <CountryTag country={job.country}/>
             {if len(job.warnings) > 0 {
-                <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-primary-deep">Impersonators reported</span>
+                <span className="rounded-md border border-primary/20 bg-secondary px-2 py-0.5 text-[10px] font-semibold text-primary-deep">Impersonators reported</span>
             }}
         </div>
         {if variant == "salary" {
             <div>
-                <p className="mt-5 font-display text-3xl font-bold tracking-tight">{job.salary}</p>
+                <p className="mt-4 font-display text-3xl font-extrabold tracking-tight text-foreground">{job.salary}</p>
                 <p className="text-xs text-muted-foreground">{("per month · ≈ " + lkr(job.salary_lkr)) if job.salary_lkr > 0 else "per month"}</p>
-                <h3 className="mt-3 text-base font-semibold leading-snug tracking-tight">{job.title}</h3>
+                <h3 className="mt-2 text-base font-semibold leading-snug tracking-tight text-foreground group-hover:text-primary transition-colors">{job.title}</h3>
             </div>
         } else {
             <div>
-                <h3 className={"mt-4 font-semibold leading-snug tracking-tight " + ("text-2xl" if variant == "wide" else "text-lg")}>{job.title}</h3>
-                <p className="mt-1 text-sm"><span className="font-semibold">{job.salary}</span><span className="text-muted-foreground">{(" / month · ≈ " + lkr(job.salary_lkr)) if job.salary_lkr > 0 else " / month"}</span></p>
+                <h3 className={"mt-4 font-semibold leading-snug tracking-tight text-foreground group-hover:text-primary transition-colors " + ("text-2xl" if variant == "wide" else "text-lg")}>{job.title}</h3>
+                <p className="mt-1 text-sm"><span className="font-semibold text-foreground">{job.salary}</span><span className="text-muted-foreground">{(" / month · ≈ " + lkr(job.salary_lkr)) if job.salary_lkr > 0 else " / month"}</span></p>
             </div>
         }}
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border pt-3 text-xs">
-            <div><dt className="eyebrow">Agency</dt><dd className="mt-0.5 truncate font-medium">{job.agency_name}</dd></div>
-            <div><dt className="eyebrow">Contract</dt><dd className="mt-0.5 truncate font-medium">{(job.contract_type or "—") + (f" · {job.contract_months} mo" if job.contract_months else "")}</dd></div>
-            <div className="col-span-2"><dt className="eyebrow">Take-home (est.)</dt><dd className="mt-0.5 font-medium">{lkr(job.take_home_lkr) if job.take_home_lkr > 0 else "Not enough data"}</dd></div>
+            <div><dt className="eyebrow">Agency</dt><dd className="mt-0.5 truncate font-medium text-foreground">{job.agency_name}</dd></div>
+            <div><dt className="eyebrow">Contract</dt><dd className="mt-0.5 truncate font-medium text-foreground">{(job.contract_type or "—") + (f" · {job.contract_months} mo" if job.contract_months else "")}</dd></div>
+            <div className="col-span-2"><dt className="eyebrow">Take-home (est.)</dt><dd className="mt-0.5 font-semibold text-primary-deep">{lkr(job.take_home_lkr) if job.take_home_lkr > 0 else "Not enough data"}</dd></div>
         </dl>
         {if variant == "wide" and len(reasons) > 0 {
             <p className="mt-3 text-sm text-muted-foreground">{"Why it fits: " + " · ".join(reasons)}</p>
@@ -261,7 +264,7 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
             <p className="mt-8 flex items-start gap-2 rounded-lg border border-caution/50 bg-caution-soft px-4 py-3 text-sm"><Info className="mt-0.5 h-4 w-4 shrink-0"/> Verification is not a guarantee of safety. Always confirm your contract with the Sri Lanka Bureau of Foreign Employment before paying or travelling.</p>
             {[<p key={i} className="mt-3 rounded-lg border border-primary/30 bg-secondary px-4 py-3 text-sm font-semibold text-primary-deep">{"Impersonation alert: " + w}</p> for (i, w) in enumerate(jb.warnings)]}
             <div className="mt-6">
-                <Section n="01" title="Safety findings">
+                <Section category="Forensic Review" title="Safety findings">
                     <div className="mb-2 flex items-center gap-2"><LiveTag label="Real agent analysis"/><span className="text-xs text-muted-foreground">{f"{jb.score}/100 · separate from match score. Promotion never changes it."}</span></div>
                     {if len(jb.findings) == 0 {
                         <p className="rounded-xl border border-border bg-card px-4 py-4 text-sm text-muted-foreground">No supported findings. That is not proof the job is safe.</p>
@@ -274,7 +277,7 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                     {[<p key={k} className="mt-2 text-xs font-semibold text-primary-deep">{"Appeal " + ap}</p> for (k, ap) in enumerate(jb.appeals)]}
                     <details className="mt-3 text-sm"><summary className="cursor-pointer font-semibold">Full job description</summary><p className="mt-2 whitespace-pre-wrap text-muted-foreground">{jb.description}</p></details>
                 </Section>
-                <Section n="02" title="Pay & deductions">
+                <Section category="Compensation" title="Pay & deductions">
                     <table className="w-full text-sm"><tbody className="divide-y divide-border">
                         <tr><td className="py-2">Basic salary</td><td className="py-2 text-right font-mono">{jb.salary}</td></tr>
                         <tr><td className="py-2 text-muted-foreground">{"− " + (jb.deductions or "Deductions")}</td><td className="py-2 text-right font-mono">{lkr(deducted) if deducted > 0 else "None disclosed"}</td></tr>
@@ -284,14 +287,14 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                     </tbody></table>
                     {[<p key={k} className="mt-2 text-xs text-muted-foreground">{"Correction requested " + c}</p> for (k, c) in enumerate(jb.corrections)]}
                 </Section>
-                <Section n="03" title="Visa & contract">
+                <Section category="Legal Terms" title="Visa & contract">
                     <dl className="grid gap-4 sm:grid-cols-3">
                         <div><dt className="eyebrow">Occupation</dt><dd className="mt-1 font-semibold">{jb.occupation or "—"}</dd></div>
                         <div><dt className="eyebrow">Contract</dt><dd className="mt-1 font-semibold">{(jb.contract_type or "—") + (f" · {jb.contract_months} months" if jb.contract_months else "")}</dd></div>
                         <div><dt className="eyebrow">Experience</dt><dd className="mt-1 font-semibold">{f"{jb.experience_years}+ years" if jb.experience_years else "None required"}</dd></div>
                     </dl>
                 </Section>
-                <Section n="04" title="Why it matches">
+                <Section category="Candidate Fit" title="Why it matches">
                     {if mv >= 0 {
                         <div>
                             <ul className="space-y-2">{[<li key={k} className="flex gap-2 text-sm"><span className="mt-2 h-1 w-3 bg-primary"></span>{r}</li> for (k, r) in enumerate(match_reasons(matches, jb.id))]}</ul>
@@ -302,7 +305,7 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                     }}
                     <p className="mt-3 text-xs text-muted-foreground">Based on your profile. A high match does not mean a job is safe.</p>
                 </Section>
-                <Section n="05" title="Who's behind it">
+                <Section category="Agency Identity" title="Who's behind it">
                     <div className="rounded-xl border border-border bg-card p-4">
                         <p className="eyebrow">Recruitment agency</p>
                         <p className="mt-1 font-semibold">{jb.agency_name}</p>
@@ -310,7 +313,7 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                         <div className="mt-3 flex items-center justify-between"><VerifyBadge state="verified"/><span className="text-xs text-muted-foreground">{f"{len(jb.reviews)} moderated reports"}</span></div>
                     </div>
                 </Section>
-                <Section n="06" title="Worker reports">
+                <Section category="Community Audit" title="Worker reports">
                     <ul className="divide-y divide-border rounded-xl border border-border bg-card px-4">
                         {if len(jb.reviews) == 0 {
                             <li className="py-4 text-sm text-muted-foreground">No reports yet.</li>

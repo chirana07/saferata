@@ -165,17 +165,32 @@ def:pub Companies(refresh: int) -> JsxElement {
         {if len(agencies) == 0 {
             <EmptyState title="No agencies verified yet" body="Agencies appear here after a check or a job posting finds them on the SLBFE register."/>
         } else {
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
                 <table className="w-full min-w-[640px] text-sm">
-                    <thead className="eyebrow border-b border-border text-left"><tr><th className="px-4 py-3">Name</th><th>Type</th><th>Licence / registration</th><th>Listings</th><th className="pr-4">Reports</th></tr></thead>
+                    <thead className="eyebrow border-b border-border bg-muted/40 text-left">
+                        <tr>
+                            <th className="px-5 py-3.5">Agency Name</th>
+                            <th>Accreditation</th>
+                            <th>Licence No.</th>
+                            <th>Validity</th>
+                            <th>Listings</th>
+                            <th>Worker Reports</th>
+                            <th className="pr-5 text-right">Action</th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y divide-border">
                         {[
-                            <tr key={a.id} className="hover:bg-muted">
-                                <td className="px-4 py-3"><button onClick={lambda -> None { open_id = a.id; }} className="text-left font-semibold hover:text-primary">{a.name}</button><p className="text-xs text-muted-foreground">{f"Licence {a.licence_no} · valid until {a.valid_upto}"}</p></td>
-                                <td className="text-muted-foreground">Recruitment agency</td>
-                                <td><VerifyBadge state="verified"/></td>
-                                <td className="font-mono">{str(len(a.jobs))}</td>
-                                <td className="pr-4 font-mono">{str(a.reports)}</td>
+                            <tr key={a.id} onClick={lambda -> None { open_id = a.id; }} className="cursor-pointer transition-colors hover:bg-muted/60">
+                                <td className="px-5 py-3.5">
+                                    <span className="font-semibold text-foreground hover:text-primary transition-colors">{a.name}</span>
+                                    <p className="font-mono text-xs text-muted-foreground">{", ".join(a.phones[:2])}</p>
+                                </td>
+                                <td><VerifyBadge state="verified" prefix="SLBFE"/></td>
+                                <td className="font-mono text-xs font-semibold">{a.licence_no}</td>
+                                <td className="font-mono text-xs text-muted-foreground">{a.valid_upto}</td>
+                                <td className="font-mono text-xs">{str(len(a.jobs))}</td>
+                                <td className="font-mono text-xs">{str(a.reports)}</td>
+                                <td className="pr-5 text-right font-medium text-primary">Open profile →</td>
                             </tr>
                             for a in agencies
                         ]}

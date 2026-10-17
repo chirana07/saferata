@@ -3,7 +3,7 @@
 import from "lucide-react" { Check, Loader2, RotateCcw, FileText, Copy, Landmark, Scale }
 import from agents { Investigate, CaseReport, Step }
 import from rules { RedFlag }
-import from .ui { risk_of, SafetyIndicator, FindingItem, LiveTag, PageHeader }
+import from .ui { risk_of, SafetyIndicator, FindingItem, LiveTag, PageHeader, CourtroomCard }
 
 glob SAMPLES: list[list[str]] = [
     ["Thailand IT job", "URGENT HIRING!!! IT / Data Entry jobs in THAILAND\nSalary USD 1500 per month + free accommodation + food\nNo experience needed, basic English and typing only.\nAir ticket FREE. Travel on tourist visa, company will change to work visa after arrival.\nOnly 5 seats left - pay Rs. 150,000 processing fee to confirm your seat.\nDeposit to Commercial Bank account 8012345678 (K. Perera). Send slip on WhatsApp +94 76 555 1234"],
@@ -126,17 +126,27 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
 
         <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
             <div>
-                <label className="eyebrow">Job advertisement or contract text</label>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <label className="eyebrow">Job advertisement or contract text</label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="eyebrow text-[10px] text-muted-foreground">Quick test:</span>
+                        {[<button key={s[0]} onClick={lambda -> None { text = s[1]; }} disabled={busy} className="rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-foreground transition-all hover:border-primary hover:text-primary disabled:opacity-50">{s[0]}</button> for s in SAMPLES]}
+                    </div>
+                </div>
                 <textarea id="offer" value={text} onChange={lambda (e: ChangeEvent) { text = e.target.value; }} disabled={busy} rows={10}
                     placeholder="Paste the WhatsApp message, Facebook post or contract clause you received…"
-                    className="mt-2 w-full resize-y rounded-xl border border-input bg-card p-4 font-mono text-sm leading-relaxed shadow-card outline-none focus:border-primary"/>
+                    className="w-full resize-y rounded-xl border border-input bg-card p-4 font-mono text-sm leading-relaxed shadow-card outline-none transition-colors focus:border-primary"/>
                 {if error { <p className="mt-2 text-sm font-medium text-risk">{error}</p> }}
-                <div className="mt-3 flex flex-wrap gap-2">
-                    <button id="investigate" onClick={lambda { run([]); }} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button id="investigate" onClick={lambda { run([]); }} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary-deep disabled:opacity-60">
                         {if busy { <Loader2 className="h-4 w-4 animate-spin"/> }} Investigate offer
                     </button>
-                    <button onClick={lambda -> None { next_sample(); }} disabled={busy} className="h-11 rounded-md border border-border bg-card px-4 text-sm font-semibold">{"Use sample offer: " + SAMPLES[sample_i % len(SAMPLES)][0]}</button>
-                    {if done { <button onClick={lambda -> None { outcome = None; text = ""; }} className="inline-flex h-11 items-center gap-1.5 px-3 text-sm font-semibold text-muted-foreground"><RotateCcw className="h-4 w-4"/> New</button> }}
+                    {if text {
+                        <button onClick={lambda -> None { text = ""; }} disabled={busy} className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-muted-foreground hover:text-foreground">Clear</button>
+                    }}
+                    {if done {
+                        <button onClick={lambda -> None { outcome = None; text = ""; }} className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 text-sm font-semibold text-muted-foreground hover:text-foreground"><RotateCcw className="h-4 w-4"/> New check</button>
+                    }}
                 </div>
             </div>
 
@@ -247,23 +257,31 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
                     </section>
                 </div>
 
-                <section className="grid gap-6 rounded-2xl border border-border bg-card p-6 shadow-card md:grid-cols-2">
-                    <div><p className="eyebrow flex items-center gap-1"><Scale className="h-3 w-3"/> Prosecutor</p><p className="mt-2 text-sm">{outcome.prosecution}</p></div>
-                    <div><p className="eyebrow flex items-center gap-1"><Scale className="h-3 w-3"/> Defender</p><p className="mt-2 text-sm">{outcome.defence}</p></div>
+                <section className="grid gap-6 md:grid-cols-2">
+                    <CourtroomCard role="Prosecution case" speaker="Prosecutor Agent" argument={outcome.prosecution}/>
+                    <CourtroomCard role="Defense argument" speaker="Defender Agent" argument={outcome.defence}/>
                 </section>
 
                 {if outcome.advice is not None {
                     <section className="grid gap-6 border-t border-border pt-8 md:grid-cols-2">
                         <div>
                             <h3 className="text-lg font-bold">Ask before paying or signing</h3>
-                            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">{[<li key={k}>{q}</li> for (k, q) in enumerate(outcome.advice.questions_to_ask)]}</ol>
+                            <ol className="mt-3 list-decimal space-y-2.5 pl-5 text-sm leading-relaxed">{[<li key={k} className="text-foreground">{q}</li> for (k, q) in enumerate(outcome.advice.questions_to_ask)]}</ol>
                         </div>
                         <div>
                             <h3 className="text-lg font-bold">Next steps</h3>
-                            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">{[<li key={k}>{s}</li> for (k, s) in enumerate(outcome.advice.next_steps)]}</ul>
-                            <button onClick={lambda -> None { copy_report(); }} className="mt-4 inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-semibold">
-                                <FileText className="h-4 w-4"/> {"Report copied" if copied else "Draft report to SLBFE (1989)"} <Copy className="h-3.5 w-3.5 text-muted-foreground"/>
-                            </button>
+                            <ul className="mt-3 space-y-2.5 text-sm text-muted-foreground">{[<li key={k} className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span><span>{s}</span></li> for (k, s) in enumerate(outcome.advice.next_steps)]}</ul>
+                            <div className="mt-5 rounded-xl border border-border bg-card p-4 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <span className="eyebrow flex items-center gap-1.5 text-primary-deep"><FileText className="h-3.5 w-3.5"/> SLBFE 1989 Hotline Report Draft</span>
+                                    <button onClick={lambda -> None { copy_report(); }} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary-deep">
+                                        <Copy className="h-3.5 w-3.5"/> {if copied { "Copied to clipboard!"; } else { "Copy hotline report"; }}
+                                    </button>
+                                </div>
+                                <blockquote className="mt-2.5 max-h-36 overflow-y-auto rounded-lg bg-muted/60 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                                    {outcome.advice.report_draft or ("SafeRata report · Risk: " + outcome.band + "\n\n" + text)}
+                                </blockquote>
+                            </div>
                         </div>
                     </section>
                 }}

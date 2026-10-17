@@ -127,7 +127,10 @@ def:pub FindingItem(title: str, risk: str, kind: str, source: str, excerpt: str,
 }
 
 def:pub LiveTag(label: str = "Live data") -> JsxElement {
-    return <span className="inline-flex items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-primary-deep">{label}</span>;
+    return <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide text-primary-deep">
+        <span className="h-1.5 w-1.5 rounded-full bg-safe animate-pulse-live"></span>
+        {label}
+    </span>;
 }
 
 def:pub EmptyState(title: str, body: str) -> JsxElement {
@@ -145,8 +148,24 @@ def:pub PageHeader(eyebrow: str, title: str, accent: str = "", children: any = N
     return <header className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
         <div>
             <p className="eyebrow">{eyebrow}</p>
-            <h1 className="mt-2 text-4xl font-bold leading-[0.95] md:text-5xl">{title}{if accent { <span className="text-primary">{" " + accent}</span> }}</h1>
+            <h1 className="mt-2 text-4xl font-bold leading-[0.95] tracking-tight md:text-5xl">{title}{if accent { <span className="text-primary">{" " + accent}</span> }}</h1>
         </div>
         {children}
     </header>;
+}
+
+def:pub CourtroomCard(role: str, speaker: str, argument: str) -> JsxElement {
+    is_judge = "judge" in role.lower();
+    is_prosecutor = "prosecut" in role.lower();
+    header_cls = "bg-primary text-primary-foreground" if is_judge else ("bg-risk-soft text-risk border-b border-risk/20" if is_prosecutor else "bg-muted text-foreground border-b border-border");
+    border_cls = "border-primary/40 shadow-card" if is_judge else "border-border";
+    return <div className={"overflow-hidden rounded-xl border bg-card " + border_cls}>
+        <div className={"flex items-center justify-between px-4 py-2.5 text-xs font-semibold " + header_cls}>
+            <span className="uppercase tracking-wider">{role}</span>
+            <span className="font-mono opacity-80">{speaker}</span>
+        </div>
+        <div className="p-4">
+            <p className="text-sm leading-relaxed text-muted-foreground">{argument}</p>
+        </div>
+    </div>;
 }
