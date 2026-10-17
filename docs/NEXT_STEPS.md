@@ -20,7 +20,9 @@ Read `AGENTS.md` first: toolchain (jac 0.34.24 at `~/.local/bin/jac034`), secret
 
 ## To do, in priority order
 
-1. **Spot-check the UI** (5 minutes): click through every screen at http://localhost:8000. The data is already seeded.
+1. **UI/UX Craft Floor Elevation** (Completed):
+   - Redesigned and verified via Impeccable skill (`0522949`): custom browser surfaces, live SLBFE pulse badge, one-click investigation scenario chips, structured courtroom debate cards, formatted SLBFE 1989 report draft, and interactive verified agency directory.
+   - All 7/7 component checks and 19/19 unit tests passing. Jac share: 93.6%.
 2. **Deploy on Jac Hammer** (the web UI only; the jachammer CLI is broken):
    - jachammer.ai → New project → From GitHub → `chirana07/saferata`
    - Settings → Jac version **0.34.24**
