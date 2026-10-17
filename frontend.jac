@@ -1,12 +1,13 @@
 """SafeRata client shell: the layout-coder AppShell (sidebar nav) ported to Jac, with the real-backend screens."""
 
-import from "lucide-react" { Compass, Radar, Building2, UserRound, Briefcase }
+import from "lucide-react" { Compass, Radar, Building2, UserRound, Briefcase, Network }
 import from .components.Check { CheckOffer }
 import from .components.Discover { Discover }
 import from .components.Agency { AgencyPortal }
 import from .components.Companies { Companies }
 import from .components.Profile { Profile }
 import from .components.Feed { CommunityFeed }
+import from .components.AgentWeb { AgentWeb }
 import from .components.ui { Logo }
 
 def:pub NavItem(label: str, active: bool, kind: str, onGo: Callable[[], None]) -> JsxElement {
@@ -14,7 +15,7 @@ def:pub NavItem(label: str, active: bool, kind: str, onGo: Callable[[], None]) -
         onGo();
     }
     return <button onClick={go} className={"flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all " + ("bg-primary text-primary-foreground shadow-sm" if active else "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground")}>
-        {if kind == "discover" { <Compass className="h-4 w-4 shrink-0"/> } elif kind == "check" { <Radar className="h-4 w-4 shrink-0"/> } elif kind == "companies" { <Building2 className="h-4 w-4 shrink-0"/> } else { <UserRound className="h-4 w-4 shrink-0"/> }}
+        {if kind == "discover" { <Compass className="h-4 w-4 shrink-0"/> } elif kind == "check" { <Radar className="h-4 w-4 shrink-0"/> } elif kind == "companies" { <Building2 className="h-4 w-4 shrink-0"/> } elif kind == "web" { <Network className="h-4 w-4 shrink-0"/> } else { <UserRound className="h-4 w-4 shrink-0"/> }}
         <span className="truncate">{label}</span>
     </button>;
 }
@@ -34,6 +35,7 @@ def:pub app -> JsxElement {
                 <NavItem label="Discover" kind="discover" active={tab == "discover"} onGo={lambda -> None { tab = "discover"; }}/>
                 <NavItem label="Investigate" kind="check" active={tab == "check"} onGo={lambda -> None { tab = "check"; }}/>
                 <NavItem label="Companies" kind="companies" active={tab == "companies"} onGo={lambda -> None { tab = "companies"; }}/>
+                <NavItem label="Agent Web" kind="web" active={tab == "web"} onGo={lambda -> None { tab = "web"; }}/>
                 <NavItem label="Profile" kind="profile" active={tab == "profile"} onGo={lambda -> None { tab = "profile"; }}/>
             </nav>
             <div className="mt-6 border-t border-border pt-4">
@@ -70,6 +72,9 @@ def:pub app -> JsxElement {
                 }}
                 {if tab == "companies" {
                     <Companies refresh={refresh}/>
+                }}
+                {if tab == "web" {
+                    <AgentWeb/>
                 }}
                 {if tab == "agency" {
                     <AgencyPortal onPosted={bump}/>
