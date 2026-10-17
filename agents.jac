@@ -3,6 +3,7 @@ person) -> chosen Specialists -> Prosecutor vs Defender -> Judge -> Critic -> Sc
 Every action is logged to `steps` so the UI can show the investigation live.
 """
 import re;
+import from concurrent.futures { ThreadPoolExecutor }
 import from datetime { datetime }
 import from models { llm }
 import from graph {
@@ -368,8 +369,12 @@ walker:pub Investigate {
         experts = notes.specialists or [Specialist.FEES];
         self.log("Supervisor", "route", "calling " + ", ".join([e.name.title() + " expert" for e in experts]));
         soft: list[RedFlag] = [];
-        for e in experts {
-            res = specialist_review(e, self.text, facts, findings);
+        with ThreadPoolExecutor(max_workers=3) as pool {
+            futs = [pool.submit(specialist_review, e, self.text, facts, findings) for e in experts];
+            reviews = [f.result() for f in futs];
+        }
+        for (i, e) in enumerate(experts) {
+            res = reviews[i];
             name = e.name.title() + " expert";
             self.log(name, "review", f"{len(res)} warning sign(s)" + (": " + "; ".join([s.title for s in res]) if res else ""));
             soft.extend([soft_to_red(s, name) for s in res]);
@@ -383,8 +388,12 @@ walker:pub Investigate {
         }
 
         lines = _flag_lines(kept);
-        prosecution = prosecute(self.text, findings, lines);
-        defence = defend(self.text, findings, lines);
+        with ThreadPoolExecutor(max_workers=2) as pool {
+            pf = pool.submit(prosecute, self.text, findings, lines);
+            df = pool.submit(defend, self.text, findings, lines);
+            prosecution: str = pf.result();
+            defence: str = df.result();
+        }
         self.log("Prosecutor", "argue", prosecution[:160]);
         self.log("Defender", "argue", defence[:160]);
         ruling = judge_case(self.text, findings, lines, prosecution, defence);
