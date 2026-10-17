@@ -84,7 +84,7 @@ def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
 
     async def appeal -> None {
         appealing = True;
-        result = root spawn AppealFinding(job_id=appeal_job, finding=appeal_finding, explanation=appeal_text, evidence="");
+        result = root spawn AppealFinding(job_id=appeal_job, finding=appeal_finding, explanation=appeal_text, evidence="", agency_phone=contact_phone);
         if result.reports {
             r: PostResult = result.reports[0];
             message = r.message;
@@ -129,7 +129,9 @@ def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
                 <div className="flex items-center justify-between"><h2 className="text-xl font-bold">New listing</h2><button onClick={lambda -> None { fill_sample(); }} className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold">Fill sample</button></div>
                 <fieldset className="grid gap-4 sm:grid-cols-2"><legend className="eyebrow mb-2">Agency</legend>
                     <label className="block text-xs font-semibold">SLBFE licence number<input value={licence_no} onChange={lambda (e: ChangeEvent) { licence_no = e.target.value; if len(e.target.value.strip()) >= 3 { load_mine(e.target.value.strip()); } }} className={INPUT}/></label>
-                    <label className="block text-xs font-semibold">Contact phone<input value={contact_phone} onChange={lambda (e: ChangeEvent) { contact_phone = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Contact phone<input value={contact_phone} onChange={lambda (e: ChangeEvent) { contact_phone = e.target.value; }} className={INPUT}/>
+                        <span className="mt-1 block text-[11px] font-normal text-muted-foreground">Must match agency's official SLBFE number to avoid impersonation warning</span>
+                    </label>
                 </fieldset>
                 <fieldset className="grid gap-4 sm:grid-cols-2"><legend className="eyebrow mb-2">Role</legend>
                     <label className="block text-xs font-semibold">Job title<input value={role} onChange={lambda (e: ChangeEvent) { role = e.target.value; }} className={INPUT}/></label>

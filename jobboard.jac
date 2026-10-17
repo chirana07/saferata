@@ -457,7 +457,8 @@ walker:pub AppealFinding {
     has job_id: str,
         finding: str,
         explanation: str,
-        evidence: str = "";
+        evidence: str = "",
+        agency_phone: str = "";
 
     can appeal with Root entry {
         if not self.explanation.strip() {
@@ -471,6 +472,25 @@ walker:pub AppealFinding {
         }
         job: Job = target;
         steps: list[Step] = [];
+
+        # Agency identity verification against live SLBFE register
+        reg = search_by_licence(job.licence_no);
+        ag_phones: list[str] = [];
+        if reg.ok and reg.records {
+            ag_phones = [normalise_phone(p) for p in reg.records[0].phones if normalise_phone(p)];
+        }
+        if self.agency_phone.strip() {
+            caller_phone = normalise_phone(self.agency_phone);
+            if ag_phones and caller_phone not in ag_phones {
+                steps.append(Step(agent="Gatekeeper", action="auth_failed", detail=f"Phone {self.agency_phone} is not registered to {job.agency_name} on SLBFE register"));
+                report PostResult(ok=False, message=f"Identity verification failed: '{self.agency_phone}' is not a registered contact phone for {job.agency_name}. Only verified agency representatives may file appeals.", job=job_view(job), steps=steps);
+                disengage;
+            }
+            steps.append(Step(agent="Gatekeeper", action="auth_verified", detail=f"Agency identity authenticated via registered phone {self.agency_phone}"));
+        } else {
+            steps.append(Step(agent="Gatekeeper", action="auth_advisory", detail="Appeal filed without registered phone challenge"));
+        }
+
         titles = [f.split("|")[0] for f in job.soft_flags];
         if self.finding not in titles {
             steps.append(Step(agent="Appeal Reviewer", action="refuse", detail=f"'{self.finding}' is an official register or rule finding, which only the SLBFE can change"));
@@ -485,7 +505,8 @@ walker:pub AppealFinding {
             job.findings_raw = [r for r in job.findings_raw if not r.startswith(self.finding + SEP)];
             _rescore(job);
         }
-        job.appeals = job.appeals + [f"{_now()} · {self.finding}: {'accepted' if d.accept else 'rejected'}. {d.reason}"];
+        filer_tag = f" (Verified via {self.agency_phone})" if self.agency_phone.strip() else "";
+        job.appeals = job.appeals + [f"{_now()} · {self.finding}: {'accepted' if d.accept else 'rejected'}{filer_tag}. {d.reason}"];
         steps.append(Step(agent="Appeal Reviewer", action="decide", detail=f"{'accepted' if d.accept else 'rejected'}: {d.reason}"));
         if d.accept {
             steps.append(Step(agent="Supervisor", action="re-score", detail=f"{old_band} -> {job.band} ({job.score}/100)"));
@@ -497,7 +518,8 @@ walker:pub AppealFinding {
 """Agency's public reply to a worker review (shown under the review)."""
 walker:pub RespondToReview {
     has review_id: str,
-        response: str;
+        response: str,
+        agency_phone: str = "";
 
     can respond with Root entry {
         if not self.response.strip() {
@@ -510,7 +532,27 @@ walker:pub RespondToReview {
             disengage;
         }
         rv: Review = target;
-        rv.agency_response = self.response.strip()[:800];
+        parent_jobs = [j for j in [rv <--[?:Job]]];
+        prefix = "";
+        if parent_jobs {
+            pjob = parent_jobs[0];
+            reg = search_by_licence(pjob.licence_no);
+            ag_phones: list[str] = [];
+            if reg.ok and reg.records {
+                ag_phones = [normalise_phone(p) for p in reg.records[0].phones if normalise_phone(p)];
+            }
+            if self.agency_phone.strip() {
+                caller_phone = normalise_phone(self.agency_phone);
+                if ag_phones and caller_phone not in ag_phones {
+                    report PostResult(ok=False, message=f"Identity verification failed: '{self.agency_phone}' is not a registered phone for {pjob.agency_name}. Only the verified agency can post official responses.");
+                    disengage;
+                }
+                prefix = f"[{pjob.agency_name} Verified Response · {self.agency_phone}]: ";
+            } else {
+                prefix = f"[{pjob.agency_name} Official Response]: ";
+            }
+        }
+        rv.agency_response = (prefix + self.response.strip())[:800];
         report PostResult(ok=True, message="Response published under the review.");
     }
 }
