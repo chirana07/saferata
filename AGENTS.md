@@ -36,6 +36,7 @@ jac034 check <file.jac> [...]       # needs file paths on 0.34; check every file
 jac034 test rules.jac               # unit tests: rules, critic, scorer, pattern extraction
 jac034 test agents.jac              # unit tests: agency-name matching
 jac034 start --port 8000            # serve app + API (0.34 has no `run --port`)
+jac034 run seed.jac                 # load demo data via the API (after `jac034 clean --data --force` + restart)
 jac034 run evals.jac                # 8 labelled offers through the live agents (expect 8/8)
 python3 scripts/api_e2e.py          # 11 end-to-end API checks against the running server (expect 11/11)
 bash "/Users/chirana/IdeaProjects/EE AI hackathon/scripts/jac-ratio.sh" .   # Jac share, must stay >= 80%
@@ -88,6 +89,6 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
   - **Licence expiry:** the register's `Valid upto` date is checked (`rules.licence_expiry_flag`). An expired licence scores +35; one expiring within 30 days scores +10.
   - **Duplicate-offer detector:** `Investigate.find_reposts` walks earlier `Offer` nodes. When the wording matches (word 3-gram similarity of at least 0.8, digits ignored) but the contact numbers differ, it flags `REPOST` (+20). Registered agency numbers are excluded, so genuine reposts don't trigger it.
   - Both are unit-tested in `rules.jac`, and the live server run passed `scripts/api_e2e.py` 11/11 with them loaded (17 Oct, 13:00).
-- **Next ideas (backend):** a demo seed script.
+- **Demo data:** `seed.jac` loads it through the API. Reset with `jac034 clean --data --force`, restart `jac034 start`, then `jac034 run seed.jac`. The video script is in `docs/DEMO_SCRIPT.md`. Ethics: board listings use a real licence, so they are genuine-looking, and their only negative report is an impersonation report, which leaves the agency's score untouched.
 - **Not done:** Jac Hammer deploy (the user does it in the web UI: Jac version 0.34.24, env vars `OLLAMA_API_KEY`/`GEMINI_API_KEY`), demo video.
 - **Restore point:** the git tag `jac-0.37-final` is the last version on jac 0.37.25.
