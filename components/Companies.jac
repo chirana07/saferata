@@ -2,7 +2,6 @@
 
 import from jobboard { ListAgencies, AgencyView, JobView }
 import from .theme { INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, ACCENT, MUTED, BORDER, RISK, RISK_SOFT, CARD, LABEL, band_label, band_fg, band_bg }
-import from .Discover { NotBuilt }
 
 def:pub Companies(refresh: int) -> JsxElement {
     has agencies: list[AgencyView] = [],
@@ -58,10 +57,12 @@ def:pub Companies(refresh: int) -> JsxElement {
                         <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>Reports about impersonators do not lower the agency's own score.</div>
                     </div>
                     <div style={CARD}>
-                        <div style={LABEL}>Not in the backend yet</div>
-                        <div style={{"display": "flex", "gap": "6px", "flexWrap": "wrap", "marginTop": "8px"}}>
-                            <NotBuilt label="Agency response"/><NotBuilt label="Request correction"/><NotBuilt label="Related entities"/>
-                        </div>
+                        <div style={LABEL}>Related entities (graph)</div>
+                        <div style={{"fontSize": "13px", "marginTop": "6px", "fontWeight": "600"}}>{f"Community checks naming this agency ({len(ag.related_checks)})"}</div>
+                        <ul style={{"paddingLeft": "18px", "fontSize": "13px"}}>{[<li key={k}>{c}</li> for (k, c) in enumerate(ag.related_checks)]}</ul>
+                        <div style={{"fontSize": "13px", "fontWeight": "600"}}>{f"Numbers reported for impersonating it ({len(ag.impersonator_numbers)})"}</div>
+                        <div style={{"fontSize": "13px", "color": "#6d28d9"}}>{", ".join(ag.impersonator_numbers) or "none"}</div>
+                        <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>Agencies can answer reviews and request corrections from each job page.</div>
                     </div>
                 </div>
             </div>

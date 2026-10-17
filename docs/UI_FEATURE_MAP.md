@@ -20,25 +20,25 @@ Source design: github.com/Denuwan392/layout-coder, a Lovable React prototype bui
 | | Ask before paying / next steps / draft report | ✅ | Advisor agent |
 | **Discover** | Job list with safety badge, search, filters | ✅ / 🟡 | `ListJobs`; search and filters run client-side over the list |
 | | Salary in LKR | ✅ | `to_lkr` (approximate fixed rates) |
-| | Match % from the worker's profile | ❌ | **No profile or matching backend.** Left out. |
+| | Match % from the worker's profile | ✅ | `MatchJobs`: transparent score with reasons and cautions; the profile stays in the browser |
 | | Featured / promoted listings | ❌ | Not built (and the design itself says promotion must not affect safety) |
-| | Saved jobs | ❌ | Not built |
+| | Saved jobs | ❌ | Not built (not in the rebuilt UI) |
 | **Job detail** | Salary, safety findings, visa/contract, who's behind it | ✅ | `JobView` + the agency from the register |
-| | Pay & deductions, estimated take-home, accommodation, contract type, experience | ❌ | `PostJob` doesn't collect these fields |
-| | "Why it matches" | ❌ | Needs profile matching |
+| | Pay & deductions, estimated take-home, accommodation, contract type, experience | ✅ | New `PostJob` fields; salary parsed and converted to LKR; take-home = salary − deductions |
+| | "Why it matches" | ✅ | `MatchJobs` reasons and cautions |
 | | Enquire / questions to copy | 🟡 | Static checklist (same as the Advisor's defaults) |
 | **Companies** | List with licence, listings, reports | ✅ | New `ListAgencies` walker over `Agency` nodes |
 | **Company detail** | Licence state + last checked | ✅ | Live register record cached in the graph (`checked_at`) |
 | | Listings + worker reports | ✅ | Jobs linked to the agency + `Review` nodes (Review Verifier: credible / unverified, impersonation) |
-| | Related entities | 🟡 | Derivable from shared `Contact` nodes; not shown yet |
-| | Agency response, request correction | ❌ | Not built |
+| | Related entities | ✅ | Graph walk: checks that named the agency (`Offer → Agency`), and impersonator numbers (`Review → Contact`) |
+| | Agency response, request correction | ✅ | `RespondToReview`, `RequestCorrection` (identity not verified yet; see limitations) |
 | | Submit a report | ✅ | `AddReview` on one of the agency's jobs |
 | **Agency portal** | New listing → verification | ✅ | `PostJob`: live licence gate + full agent analysis |
 | | Pre-publication checklist | 🟡 | Computed in the UI from the form fields |
-| | Document upload (demand letter, contract) | ❌ | Not built |
-| | Dispute / appeal a finding | ❌ | Not built |
-| **Profile** | Worker profile (skills, destinations, minimum salary) | ❌ | **No backend.** Screen not rebuilt. |
-| **Compare** | Side-by-side jobs | ❌ | Not built |
+| | Document upload (demand letter, contract) | ❌ | Not built; still flagged in the UI |
+| | Dispute / appeal a finding | ✅ | `AppealFinding` + **Appeal Reviewer agent**: only agent-judgement flags can be removed, never register or rule findings; then re-score |
+| **Profile** | Worker profile (skills, destinations, minimum salary) | ✅ | Rebuilt; stored only in the browser (privacy), sent per request to `MatchJobs` |
+| **Compare** | Side-by-side jobs | ❌ | Not built (not in the rebuilt UI) |
 
 ## Backend features with no screen in the design
 

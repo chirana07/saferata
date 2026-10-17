@@ -52,7 +52,7 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
 | `graph.jac` | Persistent nodes: `Agency`, `Contact`, `Offer`, `Alert` |
 | `rules.jac` | Deterministic layer: `RedFlag`, scoring bands, evidence critic, de-duplication, country guidance, pattern extraction (`find_phones`, `find_licence`, …) + tests |
 | `agents.jac` | The agent team: the `by llm` schema types (`OfferFacts`, `SoftFlag`, `Advice`, …), the agents (Extractor, specialists, Prosecutor, Defender, Judge, Advisor), and the `Investigate` walker (Lead Investigator ReAct tools, supervisor, graph save, Network Guardian alerts) |
-| `jobboard.jac` | `PostJob` (live licence gate + auto-analysis), `ListJobs`, `AddReview` (Review Verifier: impersonation vs fraud by the agency itself) |
+| `jobboard.jac` | `PostJob` (live licence gate + auto-analysis + pay, deductions and contract fields), `ListJobs`, `AddReview` (Review Verifier: impersonation vs fraud by the agency itself), `ListAgencies` (+ related entities via graph walk), `MatchJobs` (profile match), `AppealFinding` (Appeal Reviewer agent), `RespondToReview`, `RequestCorrection` |
 | `models.jac` | `ModelPool`: Ollama Cloud gemma4, then Gemini, then local Ollama |
 | `main.jac`, `frontend.jac` | Client shell: top nav with Discover · Check an offer · Companies · Agency portal |
 | `components/Check.jac`, `Discover.jac`, `Companies.jac`, `Agency.jac`, `Feed.jac` | Screens rebuilt in Jac from the layout-coder design (github.com/Denuwan392/layout-coder). Features the backend lacks show a dashed "not built yet" chip; see `docs/UI_FEATURE_MAP.md` |
@@ -89,6 +89,7 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
   - **Licence expiry:** the register's `Valid upto` date is checked (`rules.licence_expiry_flag`). An expired licence scores +35; one expiring within 30 days scores +10.
   - **Duplicate-offer detector:** `Investigate.find_reposts` walks earlier `Offer` nodes. When the wording matches (word 3-gram similarity of at least 0.8, digits ignored) but the contact numbers differ, it flags `REPOST` (+20). Registered agency numbers are excluded, so genuine reposts don't trigger it.
   - Both are unit-tested in `rules.jac`, and the live server run passed `scripts/api_e2e.py` 11/11 with them loaded (17 Oct, 13:00).
+- **UI-driven backend features (built after the layout-coder design review):** job pay details and take-home; profile matching; appeals with the Appeal Reviewer agent; agency responses; correction requests; related entities. Only document upload is still flagged as not built.
 - **Demo data:** `seed.jac` loads it through the API. Reset with `jac034 clean --data --force`, restart `jac034 start`, then `jac034 run seed.jac`. The video script is in `docs/DEMO_SCRIPT.md`. Ethics: board listings use a real licence, so they are genuine-looking, and their only negative report is an impersonation report, which leaves the agency's score untouched.
 - **Not done:** Jac Hammer deploy (the user does it in the web UI: Jac version 0.34.24, env vars `OLLAMA_API_KEY`/`GEMINI_API_KEY`), demo video.
 - **Restore point:** the git tag `jac-0.37-final` is the last version on jac 0.37.25.

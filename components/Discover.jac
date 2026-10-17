@@ -1,6 +1,7 @@
 """Discover: verified job listings with safety badges, search/filter, and a job detail view with worker reports."""
 
-import from jobboard { ListJobs, AddReview, JobView, PostResult, ReviewView }
+import from jobboard { ListJobs, AddReview, MatchJobs, RespondToReview, RequestCorrection, JobView, JobMatch, PostResult, ReviewView }
+import from .Profile { prof }
 import from agents { Step }
 import from .theme {
     INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, ACCENT, MUTED, BORDER, RISK, RISK_SOFT, CARD, LABEL,
@@ -21,7 +22,26 @@ def risk_rank(band: str) -> int {
     return 2;
 }
 
-def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
+def match_pct(matches: list[JobMatch], job_id: str) -> int {
+    hits = [m.match for m in matches if m.job_id == job_id];
+    return hits[0] if hits else -1;
+}
+
+def match_reasons(matches: list[JobMatch], job_id: str) -> list[str] {
+    hits = [m.reasons for m in matches if m.job_id == job_id];
+    return hits[0] if hits else [];
+}
+
+def match_cautions(matches: list[JobMatch], job_id: str) -> list[str] {
+    hits = [m.cautions for m in matches if m.job_id == job_id];
+    return hits[0] if hits else [];
+}
+
+def money(v: float) -> str {
+    return f"Rs. {v:,.0f}" if v > 0 else "not stated";
+}
+
+def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> JsxElement {
     has jobs: list[JobView] = [],
         loading: bool = False,
         query: str = "",
@@ -34,13 +54,44 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
         review_evidence: str = "",
         reviewing: bool = False,
         message: str = "",
+        matches: list[JobMatch] = [],
+        respond_id: str = "",
+        respond_text: str = "",
+        correction: str = "",
         last_steps: list[Step] = [];
 
     async def load -> None {
         loading = True;
         result = root spawn ListJobs();
         jobs = result.reports;
+        if prof("saved", "") == "yes" {
+            mres = root spawn MatchJobs(occupation=prof("occupation", ""), skills=[x.strip() for x in prof("skills", "").split(",") if x.strip()],
+                destinations=[x.strip() for x in prof("destinations", "").split(",") if x.strip()], min_salary_lkr=float(prof("min_salary", "0") or "0"),
+                experience_years=int(prof("experience", "0") or "0"), needs_accommodation=prof("accommodation", "yes") == "yes");
+            matches = mres.reports;
+        }
         loading = False;
+    }
+
+    async def respond -> None {
+        result = root spawn RespondToReview(review_id=respond_id, response=respond_text);
+        if result.reports {
+            r: PostResult = result.reports[0];
+            message = r.message;
+        }
+        respond_id = "";
+        respond_text = "";
+        await load();
+    }
+
+    async def request_correction -> None {
+        result = root spawn RequestCorrection(job_id=open_id, details=correction);
+        if result.reports {
+            r: PostResult = result.reports[0];
+            message = r.message;
+        }
+        correction = "";
+        await load();
     }
 
     async def submit_review -> None {
@@ -65,6 +116,9 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
     shown = [j for j in jobs if (not q or q in (j.title + " " + j.country + " " + j.agency_name + " " + j.description).lower()) and (not country or j.country == country)];
     if sort == "risk" {
         shown = sorted(shown, key=lambda (j: JobView) { risk_rank(j.band); });
+    }
+    if sort == "match" {
+        shown = sorted(shown, key=lambda (j: JobView) { -match_pct(matches, j.id); });
     }
     countries = sorted(list(set([j.country for j in jobs if j.country])));
     agencies = len(set([j.licence_no for j in jobs]));
@@ -110,9 +164,18 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
                     </div>
                     <div style={CARD}>
                         <div style={LABEL}>Pay & deductions</div>
-                        <div style={{"display": "flex", "gap": "8px", "flexWrap": "wrap", "marginTop": "8px"}}>
-                            <NotBuilt label="Deductions"/><NotBuilt label="Estimated take-home"/><NotBuilt label="Accommodation"/><NotBuilt label="Contract type"/>
-                        </div>
+                        <table style={{"width": "100%", "fontSize": "14px", "marginTop": "6px", "borderCollapse": "collapse"}}><tbody>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Basic salary</td><td>{jb.salary + (" (≈ " + money(jb.salary_lkr) + ")" if jb.salary_lkr > 0 else "")}</td></tr>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Deductions</td><td>{jb.deductions or "none disclosed"}</td></tr>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Estimated take-home</td><td style={{"fontWeight": "700"}}>{money(jb.take_home_lkr) + " / month"}</td></tr>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Recruitment fee to you</td><td>{money(jb.worker_fee_lkr) if jb.worker_fee_lkr > 0 else "none stated"}</td></tr>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Accommodation</td><td>{jb.accommodation or "not stated"}</td></tr>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Contract</td><td>{((jb.contract_type + " · ") if jb.contract_type else "") + (f"{jb.contract_months} months" if jb.contract_months else "length not stated")}</td></tr>
+                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Experience</td><td>{f"{jb.experience_years} year(s)" if jb.experience_years else "none required"}</td></tr>
+                        </tbody></table>
+                        <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>LKR figures use approximate fixed exchange rates.</div>
+                        {[<div key={k} style={{"fontSize": "13px", "color": PRIMARY_DEEP, "marginTop": "6px"}}>{"Appeal " + ap}</div> for (k, ap) in enumerate(jb.appeals)]}
+                        {[<div key={k} style={{"fontSize": "13px", "color": MUTED_INK, "marginTop": "4px"}}>{"Correction requested " + c}</div> for (k, c) in enumerate(jb.corrections)]}
                     </div>
                     <div style={CARD}>
                         <div style={LABEL}>{f"Moderated worker reports ({len(jb.reviews)})"}</div>
@@ -132,6 +195,18 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
                                     <div style={{"color": MUTED_INK, "fontStyle": "italic"}}>{"Evidence: " + rv.evidence}</div>
                                 }}
                                 <div style={{"color": MUTED_INK, "fontSize": "12px"}}>{rv.reason}</div>
+                                {if rv.agency_response {
+                                    <div style={{"marginTop": "6px", "background": ACCENT, "borderRadius": "8px", "padding": "6px 10px", "fontSize": "13px"}}><b>Agency response: </b>{rv.agency_response}</div>
+                                }}
+                                {if respond_id == rv.id {
+                                    <div style={{"display": "flex", "gap": "6px", "marginTop": "6px"}}>
+                                        <input placeholder="Agency response" value={respond_text} onChange={lambda (e: ChangeEvent) { respond_text = e.target.value; }}
+                                            style={{"flex": "1", "padding": "7px", "borderRadius": "8px", "border": "1px solid " + BORDER}}/>
+                                        <button onClick={lambda { respond(); }} style={{"background": PRIMARY, "color": "white", "border": "none", "borderRadius": "8px", "padding": "6px 12px"}}>Publish</button>
+                                    </div>
+                                } elif not rv.agency_response {
+                                    <button onClick={lambda -> None { respond_id = rv.id; }} style={{"marginTop": "6px", "background": "transparent", "border": "none", "color": PRIMARY, "fontSize": "12px", "cursor": "pointer", "padding": "0"}}>Respond as agency</button>
+                                }}
                             </div>
                             for (i, rv) in enumerate(jb.reviews)
                         ]}
@@ -176,7 +251,25 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
                             <li>What is the employer's registration number?</li>
                             <li>Which fees will I pay, to whom, and will I get a receipt?</li>
                         </ul>
-                        <NotBuilt label="Why it matches (profile matching)"/>
+                    </div>
+                    <div style={CARD}>
+                        <div style={LABEL}>Why it matches</div>
+                        {if match_pct(matches, jb.id) >= 0 {
+                            <div style={{"fontSize": "14px"}}>
+                                <div style={{"fontSize": "22px", "fontWeight": "800", "color": PRIMARY_DEEP}}>{f"{match_pct(matches, jb.id)}% match"}</div>
+                                <ul style={{"paddingLeft": "18px"}}>{[<li key={k}>{r}</li> for (k, r) in enumerate(match_reasons(matches, jb.id))]}</ul>
+                                <ul style={{"paddingLeft": "18px", "color": RISK}}>{[<li key={k}>{c}</li> for (k, c) in enumerate(match_cautions(matches, jb.id))]}</ul>
+                                <div style={{"fontSize": "12px", "color": MUTED_INK}}>Based on your profile. A high match does not mean a job is safe.</div>
+                            </div>
+                        } else {
+                            <button onClick={lambda -> None { onProfile(); }} style={{"background": ACCENT, "color": PRIMARY_DEEP, "border": "none", "borderRadius": "8px", "padding": "7px 12px", "fontWeight": "600", "marginTop": "6px"}}>Add your profile to see why it matches</button>
+                        }}
+                    </div>
+                    <div style={CARD}>
+                        <div style={LABEL}>Request a correction</div>
+                        <textarea rows={2} placeholder="What is wrong in this listing?" value={correction} onChange={lambda (e: ChangeEvent) { correction = e.target.value; }}
+                            style={{"width": "100%", "boxSizing": "border-box", "padding": "8px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "8px", "fontFamily": "inherit"}}/>
+                        <button onClick={lambda { request_correction(); }} style={{"marginTop": "6px", "background": MUTED, "border": "1px solid " + BORDER, "borderRadius": "8px", "padding": "6px 12px"}}>Send for moderation</button>
                     </div>
                 </div>
             </div>
@@ -201,6 +294,7 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
                     style={{"padding": "10px", "borderRadius": "10px", "border": "1px solid " + BORDER}}>
                     <option value="recent">Most recent</option>
                     <option value="risk">Lowest risk first</option>
+                    <option value="match">Best match</option>
                 </select>
             </div>
             {if loading and len(jobs) == 0 {
@@ -227,7 +321,12 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
                         {if len(j.warnings) > 0 {
                             <span style={{"background": "#f5eef8", "color": "#6d28d9", "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "700"}}>Impersonators reported</span>
                         }}
-                        <NotBuilt label="Match %"/>
+                        {if match_pct(matches, j.id) >= 0 {
+                            <span style={{"background": "#eef2ff", "color": PRIMARY_DEEP, "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "700"}}>{f"Match: {match_pct(matches, j.id)}%"}</span>
+                        }}
+                        {if j.salary_lkr > 0 {
+                            <span style={{"color": MUTED_INK, "fontSize": "12px"}}>{"≈ " + money(j.salary_lkr) + " / month"}</span>
+                        }}
                         <button onClick={lambda -> None { open_id = j.id; message = ""; last_steps = []; }}
                             style={{"marginLeft": "auto", "background": PRIMARY, "color": "white", "border": "none", "borderRadius": "8px", "padding": "7px 14px", "fontWeight": "600", "cursor": "pointer"}}>Open</button>
                     </div>
@@ -252,8 +351,8 @@ def:pub Discover(onCheck: Callable[[], None]) -> JsxElement {
             </div>
             <div style={CARD}>
                 <div style={LABEL}>Your profile</div>
-                <p style={{"fontSize": "14px", "color": MUTED_INK}}>Profile-based matching from the design is not part of the backend yet.</p>
-                <NotBuilt label="Profile & match"/>
+                <p style={{"fontSize": "14px", "color": MUTED_INK}}>{("Matching for " + (prof("occupation", "") or "your profile") + ". Listings show a match % and the reasons.") if prof("saved", "") == "yes" else "Add your occupation, skills and destinations to see a match % on every listing."}</p>
+                <button onClick={lambda -> None { onProfile(); }} style={{"background": ACCENT, "color": PRIMARY_DEEP, "border": "none", "borderRadius": "8px", "padding": "7px 12px", "fontWeight": "600"}}>{"Edit profile" if prof("saved", "") == "yes" else "Add work preferences"}</button>
             </div>
         </div>
     </div>;

@@ -4,10 +4,11 @@ import from .components.Check { CheckOffer }
 import from .components.Discover { Discover }
 import from .components.Agency { AgencyPortal }
 import from .components.Companies { Companies }
+import from .components.Profile { Profile }
 import from .components.Feed { CommunityFeed }
 import from .components.theme { BG, INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, BORDER }
 
-glob TABS: list[list[str]] = [["discover", "Discover"], ["check", "Check an offer"], ["companies", "Companies"], ["agency", "Agency portal"]];
+glob TABS: list[list[str]] = [["discover", "Discover"], ["check", "Check an offer"], ["companies", "Companies"], ["agency", "Agency portal"], ["profile", "Profile"]];
 
 def:pub app -> JsxElement {
     has tab: str = "check",
@@ -44,10 +45,13 @@ def:pub app -> JsxElement {
                 </div>
             }}
             {if tab == "discover" {
-                <Discover onCheck={lambda -> None { tab = "check"; }}/>
+                <Discover onCheck={lambda -> None { tab = "check"; }} onProfile={lambda -> None { tab = "profile"; }}/>
             }}
             {if tab == "agency" {
                 <AgencyPortal onPosted={bump}/>
+            }}
+            {if tab == "profile" {
+                <Profile/>
             }}
             {if tab == "companies" {
                 <Companies refresh={refresh}/>
