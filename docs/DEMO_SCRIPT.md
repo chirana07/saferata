@@ -8,7 +8,7 @@
 ## 1. Hook (15 s)
 Many thousands of Sri Lankans pay recruiters for jobs abroad every year. Some arrive on a tourist visa with no job; some end up in scam compounds. SafeRata checks the offer **before** you pay.
 
-## 2. Check an offer: the reposted Thailand ad (45 s)
+## 2. Investigate: the reposted Thailand ad (45 s)
 Paste this. It's the seeded Thailand ad, reposted with a new number and a higher salary:
 
 ```

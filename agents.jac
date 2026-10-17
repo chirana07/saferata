@@ -234,8 +234,9 @@ def extract_facts(offer: str) -> OfferFacts by llm(temperature=0.0);
 sem extract_facts = "You are the Extractor agent. Read a foreign job offer (Facebook ad, WhatsApp message or contract) aimed at Sri Lankan workers and extract the facts. Do not invent anything that is not in the text. Copy every evidence string VERBATIM from the offer text (a short exact quote), or leave it empty.";
 sem extract_facts.offer = "The raw job offer text.";
 
-def specialist_review(role: Specialist, offer: str, facts: OfferFacts, notes: str) -> list[SoftFlag] by llm(temperature=0.2);
+def specialist_review(today: str, role: Specialist, offer: str, facts: OfferFacts, notes: str) -> list[SoftFlag] by llm(temperature=0.2);
 sem specialist_review = "You are a specialist reviewer protecting Sri Lankan migrant workers. Review the offer ONLY from your specialist angle (role). Return 0-4 warning signs. Each evidence MUST be an exact quote from the offer. If nothing is wrong from your angle, return an empty list.";
+sem specialist_review.today = "Today's date (YYYY-MM-DD); dates before it are in the past.";
 sem specialist_review.role = "Your specialist angle.";
 sem specialist_review.offer = "The raw job offer text.";
 sem specialist_review.facts = "Facts the Extractor pulled out.";
@@ -747,7 +748,7 @@ walker:pub Investigate {
         soft: list[RedFlag] = [];
         reviews: list[list[SoftFlag]] = [];
         with ThreadPoolExecutor(max_workers=3) as pool {
-            futs = [pool.submit(specialist_review, e, self.text, facts, findings) for e in experts];
+            futs = [pool.submit(specialist_review, _now()[:10], e, self.text, facts, findings) for e in experts];
             for (i, fut) in enumerate(futs) {
                 try {
                     reviews.append(fut.result());

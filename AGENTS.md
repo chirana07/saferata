@@ -2,6 +2,8 @@
 
 Read this before changing anything. It is the single source of truth for how to work in this repo.
 
+**What's left to do:** see [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) (handoff checkpoint).
+
 ## What this is
 
 SafeRata is a multi-agent app for **AI Hackathon 2026 (Jaseci)**. A worker pastes a foreign job offer; a team of AI agents investigates it against the **live SLBFE licensed-agency register** and returns a verdict with quoted evidence. It also includes a verified job board with evidence-backed reviews.
@@ -55,8 +57,8 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
 | `jobboard.jac` | `PostJob` (live licence gate + auto-analysis + pay, deductions and contract fields), `ListJobs`, `AddReview` (Review Verifier: impersonation vs fraud by the agency itself), `ListAgencies` (+ related entities via graph walk), `MatchJobs` (profile match), `AppealFinding` (Appeal Reviewer agent), `RespondToReview`, `RequestCorrection` |
 | `models.jac` | `ModelPool`: Ollama Cloud gemma4, then Gemini, then local Ollama |
 | `main.jac`, `frontend.jac` | Client shell: top nav with Discover · Check an offer · Companies · Agency portal |
-| `components/Check.jac`, `Discover.jac`, `Companies.jac`, `Agency.jac`, `Feed.jac` | Screens rebuilt in Jac from the layout-coder design (github.com/Denuwan392/layout-coder). Features the backend lacks show a dashed "not built yet" chip; see `docs/UI_FEATURE_MAP.md` |
-| `components/theme.cl.jac` | Design tokens. Pinned client-side (`.cl.jac`); in 0.34, client modules export only `:pub` globals and defs |
+| `components/Check.jac` (Investigate), `Discover.jac` (+ job detail), `Companies.jac`, `Agency.jac`, `Profile.jac`, `Feed.jac`, `ui.jac` (shared primitives) | Exact port of the layout-coder design (github.com/Denuwan392/layout-coder) to Jac: same Tailwind classes, tokens (`assets/main.css`) and lucide icons, driven by the real backend. Missing features show a dashed "not built yet" chip; see `docs/UI_FEATURE_MAP.md` |
+| `assets/main.css` | The design's stylesheet (Tailwind v4 `@theme` tokens, fonts, utilities). Tailwind runs via `[client.vite]` in `jac.toml` and scans `**/*.jac` |
 | `evals.jac`, `scripts/api_e2e.py`, `try_case.jac` | Evaluation set, API end-to-end checks, CLI helper (`jac034 run try_case.jac samples/x.txt`) |
 
 ## Design rules (do not break)
@@ -77,6 +79,8 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
 7. **Narrowing in comprehensions:** "not None" narrowing is lost inside a comprehension, so copy the narrowed values into typed locals first.
 8. **`sem` placement:** `sem` goes at top level (`sem Type.field = "...";`). Don't put double quotes inside a `sem` string.
 9. **Client modules:** a module with no JSX is placed on the server, so pin pure client helpers as `.cl.jac` and mark their globals and defs `:pub` (0.34 exports nothing else). After renaming client modules, delete `.jac/client/compiled`.
+11. **Tailwind v4:** install with `jac034 install --npm --dev tailwindcss @tailwindcss/vite`, register `tailwindcss()` under `[client.vite]` in `jac.toml`, then `import "./assets/main.css";` in `main.jac`. Use `@source "../**/*.jac"` so classes in `.jac` files are picked up.
+12. **Database reset:** stop the server and confirm with `pgrep -fl "jac034 start"` **before** `jac034 clean --data --force`. A server that's still running writes its data back.
 10. **Nested walkers:** a walker spawned inside another walker sends its `report`s to the HTTP response. `Investigate(quiet=True)` suppresses that; read `inv.st.result` instead.
 
 ## Current status (17 Oct, ~12:55)

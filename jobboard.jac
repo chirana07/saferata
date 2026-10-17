@@ -142,9 +142,10 @@ sem ReviewAssessment.impersonation = "True if the reviewer was cheated by someon
 sem ReviewAssessment.scam_contacts = "Phone numbers / accounts the scammer used, copied from the review or evidence. Empty if none.";
 sem ReviewAssessment.reason = "One sentence explaining the assessment.";
 
-def verify_review(job_title: str, agency: str, registered_contacts: list[str], job_description: str, kind: str, review: str, evidence: str, earlier_reviews: list[str]) -> ReviewAssessment by llm(temperature=0.0);
+def verify_review(today: str, job_title: str, agency: str, registered_contacts: list[str], job_description: str, kind: str, review: str, evidence: str, earlier_reviews: list[str]) -> ReviewAssessment by llm(temperature=0.0);
 sem verify_review.registered_contacts = "The agency's official phone numbers/email from the SLBFE register. A scammer using a different number is impersonating the agency.";
 sem verify_review = "You are the Review Verifier agent on a platform that protects Sri Lankan migrant workers. Judge whether a worker's review of a job posting is credible. Guard against both scams being hidden and fake reviews smearing honest agencies: require specifics (amounts paid, dates, what was promised vs what happened) and evidence that matches the claim. Consider consistency with earlier reviews.";
+sem verify_review.today = "Today's date (YYYY-MM-DD). Dates before today are in the past, not the future.";
 sem verify_review.evidence = "Evidence the reviewer supplied (e.g. receipt text, chat excerpt, bank slip details).";
 sem verify_review.earlier_reviews = "Earlier reviews of the same job, for consistency checks.";
 
@@ -357,7 +358,7 @@ walker:pub AddReview {
         ags = [a for a in [root -->[?:Agency]] if a.licence_no == job.licence_no];
         official: list[str] = (ags[0].phones + [ags[0].email]) if ags else [];
         earlier = [f"[{r.kind}, {r.status}] {r.text}" for r in [job -->[?:Review]]];
-        a = verify_review(job.title, job.agency_name, official, job.description, self.kind, self.text, self.evidence, earlier);
+        a = verify_review(_now()[:10], job.title, job.agency_name, official, job.description, self.kind, self.text, self.evidence, earlier);
         status = "credible" if a.credible and a.credibility >= 60 else "unverified";
         imp = a.impersonation and self.kind == "fraud";
         steps.append(Step(agent="Review Verifier", action="assess", detail=f"credibility {a.credibility}/100 -> {status}" + (" (impersonation of the agency)" if imp else "") + f": {a.reason}"));
@@ -416,7 +417,7 @@ obj AppealDecision {
 sem AppealDecision.accept = "True only if the agency's explanation and evidence clearly show the finding was wrong or is now fixed (e.g. the fee was removed, the clause was misread).";
 sem AppealDecision.reason = "One or two sentences explaining the decision to both the agency and workers.";
 
-def review_appeal(finding: str, job_description: str, explanation: str, evidence: str) -> AppealDecision by llm(temperature=0.0);
+def review_appeal(today: str, finding: str, job_description: str, explanation: str, evidence: str) -> AppealDecision by llm(temperature=0.0);
 sem review_appeal = "You are the Appeal Reviewer agent on a platform protecting Sri Lankan migrant workers. An agency disputes an AI finding on its job listing. Accept the appeal only if the explanation and evidence clearly rebut the finding as it applies to the listing text. Be fair to honest agencies but never accept vague denials.";
 
 def _rescore(j: Job) {
@@ -449,7 +450,7 @@ walker:pub AppealFinding {
             report PostResult(ok=False, message="Only agent-judgement findings can be appealed here. Official register and rule findings must be resolved with the SLBFE.", job=job_view(job), steps=steps);
             disengage;
         }
-        d = review_appeal(self.finding, job.description, self.explanation, self.evidence);
+        d = review_appeal(_now()[:10], self.finding, job.description, self.explanation, self.evidence);
         old_band = job.band;
         if d.accept {
             job.soft_flags = [f for f in job.soft_flags if f.split("|")[0] != self.finding];
