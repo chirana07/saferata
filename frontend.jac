@@ -1,7 +1,9 @@
 """SafeRata client shell: top navigation + screens (layout from the layout-coder design, real Jac backend)."""
 
 import from .components.Check { CheckOffer }
-import from .components.Board { JobBoard }
+import from .components.Discover { Discover }
+import from .components.Agency { AgencyPortal }
+import from .components.Companies { Companies }
 import from .components.Feed { CommunityFeed }
 import from .components.theme { BG, INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, BORDER }
 
@@ -41,11 +43,14 @@ def:pub app -> JsxElement {
                     <CommunityFeed refresh={refresh}/>
                 </div>
             }}
-            {if tab == "discover" or tab == "agency" {
-                <JobBoard/>
+            {if tab == "discover" {
+                <Discover onCheck={lambda -> None { tab = "check"; }}/>
+            }}
+            {if tab == "agency" {
+                <AgencyPortal onPosted={bump}/>
             }}
             {if tab == "companies" {
-                <p style={{"color": MUTED_INK}}>Companies screen is being rebuilt.</p>
+                <Companies refresh={refresh}/>
             }}
         </main>
     </div>;

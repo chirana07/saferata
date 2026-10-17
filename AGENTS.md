@@ -53,7 +53,9 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
 | `agents.jac` | The agent team: the `by llm` schema types (`OfferFacts`, `SoftFlag`, `Advice`, …), the agents (Extractor, specialists, Prosecutor, Defender, Judge, Advisor), and the `Investigate` walker (Lead Investigator ReAct tools, supervisor, graph save, Network Guardian alerts) |
 | `jobboard.jac` | `PostJob` (live licence gate + auto-analysis), `ListJobs`, `AddReview` (Review Verifier: impersonation vs fraud by the agency itself) |
 | `models.jac` | `ModelPool`: Ollama Cloud gemma4, then Gemini, then local Ollama |
-| `main.jac`, `frontend.jac`, `frontend.impl.jac`, `components/*.jac` | Client UI (the user asked to focus on the backend, not the UI) |
+| `main.jac`, `frontend.jac` | Client shell: top nav with Discover · Check an offer · Companies · Agency portal |
+| `components/Check.jac`, `Discover.jac`, `Companies.jac`, `Agency.jac`, `Feed.jac` | Screens rebuilt in Jac from the layout-coder design (github.com/Denuwan392/layout-coder). Features the backend lacks show a dashed "not built yet" chip; see `docs/UI_FEATURE_MAP.md` |
+| `components/theme.cl.jac` | Design tokens. Pinned client-side (`.cl.jac`); in 0.34, client modules export only `:pub` globals and defs |
 | `evals.jac`, `scripts/api_e2e.py`, `try_case.jac` | Evaluation set, API end-to-end checks, CLI helper (`jac034 run try_case.jac samples/x.txt`) |
 
 ## Design rules (do not break)
@@ -73,7 +75,8 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
 6. **HTTPS:** the bundled Python has no CA certs, so `slbfe.jac` builds an `ssl` context from certifi or the OS bundle.
 7. **Narrowing in comprehensions:** "not None" narrowing is lost inside a comprehension, so copy the narrowed values into typed locals first.
 8. **`sem` placement:** `sem` goes at top level (`sem Type.field = "...";`). Don't put double quotes inside a `sem` string.
-9. **Nested walkers:** a walker spawned inside another walker sends its `report`s to the HTTP response. `Investigate(quiet=True)` suppresses that; read `inv.st.result` instead.
+9. **Client modules:** a module with no JSX is placed on the server, so pin pure client helpers as `.cl.jac` and mark their globals and defs `:pub` (0.34 exports nothing else). After renaming client modules, delete `.jac/client/compiled`.
+10. **Nested walkers:** a walker spawned inside another walker sends its `report`s to the HTTP response. `Investigate(quiet=True)` suppresses that; read `inv.st.result` instead.
 
 ## Current status (17 Oct, ~12:55)
 
