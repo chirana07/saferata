@@ -169,3 +169,31 @@ def:pub CourtroomCard(role: str, speaker: str, argument: str) -> JsxElement {
         </div>
     </div>;
 }
+
+def:pub RiskGauge(score: int, band: str) -> JsxElement {
+    s = max(0, min(100, score));
+    offset = int(151.0 * (1.0 - (s / 100.0)));
+    stroke_color = "#10b981" if s < 25 else ("#f59e0b" if s < 60 else "#ef4444");
+    text_color = "text-safe" if s < 25 else ("text-foreground" if s < 60 else "text-risk");
+    band_label = "LOOKS SAFE" if s < 25 else ("BE CAREFUL" if s < 60 else "CRITICAL DANGER");
+
+    return <div className="flex flex-col items-center justify-center p-2 text-center">
+        <div className="relative h-24 w-44">
+            <svg viewBox="0 0 120 75" className="h-full w-full overflow-visible">
+                <path d="M 12 62 A 48 48 0 0 1 108 62" fill="none" stroke={stroke_color} strokeWidth="12" strokeLinecap="round" opacity="0.18"/>
+                <path d="M 12 62 A 48 48 0 0 1 108 62" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" className="text-border/60"/>
+                <path d="M 12 62 A 48 48 0 0 1 108 62" fill="none" stroke={stroke_color} strokeWidth="8.5" strokeLinecap="round"
+                    strokeDasharray="151" strokeDashoffset={str(offset)}
+                    style={{"transition": "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)"}}/>
+            </svg>
+            <div className="absolute inset-x-0 bottom-1 flex flex-col items-center justify-center">
+                <span className="font-display text-3xl font-extrabold tracking-tight">{f"{s}"}</span>
+                <span className="font-mono text-[10px] uppercase tracking-wider opacity-75">Score / 100</span>
+            </div>
+        </div>
+        <div className="mt-1 flex items-center gap-1.5">
+            <span className={"h-2 w-2 rounded-full animate-pulse " + ("bg-safe" if s < 25 else ("bg-caution" if s < 60 else "bg-risk"))}></span>
+            <span className={"font-mono text-xs font-bold uppercase tracking-wide " + text_color}>{band_label}</span>
+        </div>
+    </div>;
+}

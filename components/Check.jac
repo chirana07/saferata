@@ -1,9 +1,9 @@
 """Investigate (check an offer), ported from the layout-coder design and driven by the real agent team."""
 
-import from "lucide-react" { Check, Loader2, RotateCcw, FileText, Copy, Landmark, Scale }
+import from "lucide-react" { Check, Loader2, RotateCcw, FileText, Copy, Landmark, Scale, Share2, PhoneCall }
 import from agents { Investigate, CaseReport, Step }
 import from rules { RedFlag }
-import from .ui { risk_of, SafetyIndicator, FindingItem, LiveTag, PageHeader, CourtroomCard }
+import from .ui { risk_of, SafetyIndicator, FindingItem, LiveTag, PageHeader, CourtroomCard, RiskGauge }
 
 glob SAMPLES: list[list[str]] = [
     ["Thailand IT job", "URGENT HIRING!!! IT / Data Entry jobs in THAILAND\nSalary USD 1500 per month + free accommodation + food\nNo experience needed, basic English and typing only.\nAir ticket FREE. Travel on tourist visa, company will change to work visa after arrival.\nOnly 5 seats left - pay Rs. 150,000 processing fee to confirm your seat.\nDeposit to Commercial Bank account 8012345678 (K. Perera). Send slip on WhatsApp +94 76 555 1234"],
@@ -114,6 +114,16 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
         }
     }
 
+    def share_whatsapp {
+        if outcome is not None {
+            band_str = outcome.band;
+            score_str = str(outcome.score);
+            msg = f"SafeRata Alert: Job offer analyzed against SLBFE register. Verdict: {band_str} ({score_str}/100). {verdict_copy(risk)} Official SLBFE Hotline: 1989. Verify before paying!";
+            url = "https://api.whatsapp.com/send?text=" + encodeURIComponent(msg);
+            window.open(url, "_blank");
+        }
+    }
+
     stage = int((now - started) / 2600) if busy else 99;
     all_steps: list[Step] = outcome.steps if outcome is not None else [];
     done = outcome is not None and outcome.status == "done" and not busy;
@@ -200,16 +210,31 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
 
         {if outcome is not None and done {
             <div className="mt-10 space-y-8 rise-in">
-                <section className={"grid gap-6 rounded-2xl p-7 md:grid-cols-[1fr_auto] " + ("bg-safe-soft" if risk == "low" else ("bg-caution-soft" if risk == "moderate" else "bg-ink text-ink-foreground"))}>
+                <section className={"grid gap-6 rounded-2xl p-7 items-center md:grid-cols-[1.2fr_auto] " + ("bg-safe-soft" if risk == "low" else ("bg-caution-soft" if risk == "moderate" else "bg-ink text-ink-foreground"))}>
                     <div>
-                        <p className="eyebrow">Verdict</p>
+                        <div className="flex items-center gap-2">
+                            <span className="eyebrow">Forensic Verdict</span>
+                            <span className="rounded bg-card/60 px-2 py-0.5 font-mono text-[11px] font-semibold">{outcome.band}</span>
+                        </div>
                         <h2 className="mt-2 text-3xl font-bold leading-tight md:text-4xl">{verdict_copy(risk)}</h2>
-                        <p className={"mt-3 text-sm " + ("text-ink-foreground/70" if risk in ["high", "critical"] else "text-muted-foreground")}>{outcome.judge}</p>
+                        <p className={"mt-3 text-sm leading-relaxed " + ("text-ink-foreground/75" if risk in ["high", "critical"] else "text-muted-foreground")}>{outcome.judge}</p>
+                        <div className="mt-5 flex flex-wrap items-center gap-3">
+                            <button onClick={lambda -> None { share_whatsapp(); }} className="inline-flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-95">
+                                <Share2 className="h-3.5 w-3.5"/> Share on WhatsApp
+                            </button>
+                            <a href="tel:1989" className="inline-flex items-center gap-2 rounded-lg border border-current/20 bg-card/40 px-3.5 py-2 text-xs font-semibold backdrop-blur-sm transition-all hover:bg-card/70">
+                                <PhoneCall className="h-3.5 w-3.5 text-primary"/> Call SLBFE 1989 Hotline
+                            </a>
+                        </div>
                     </div>
-                    <dl className="flex gap-8">
-                        <div><dt className="eyebrow">Risk</dt><dd className="mt-2"><SafetyIndicator risk={risk}/></dd><dd className="mt-1 font-mono text-xs">{f"{outcome.score}/100"}</dd></div>
-                        <div><dt className="eyebrow">Confidence</dt><dd className="mt-1 font-display text-3xl font-bold">{f"{outcome.confidence}%"}</dd></div>
-                    </dl>
+                    <div className="flex flex-col items-center justify-center rounded-xl bg-card/50 p-4 backdrop-blur-sm border border-border/40 shadow-sm sm:flex-row sm:gap-6">
+                        <RiskGauge score={outcome.score} band={outcome.band}/>
+                        <div className="mt-3 border-t border-border/40 pt-3 text-center sm:mt-0 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-left">
+                            <span className="eyebrow text-[10px]">AI Confidence</span>
+                            <p className="mt-1 font-display text-3xl font-extrabold">{f"{outcome.confidence}%"}</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">Calibrated across 8 agents</p>
+                        </div>
+                    </div>
                 </section>
 
                 <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -272,11 +297,16 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
                             <h3 className="text-lg font-bold">Next steps</h3>
                             <ul className="mt-3 space-y-2.5 text-sm text-muted-foreground">{[<li key={k} className="flex items-start gap-2"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span><span>{s}</span></li> for (k, s) in enumerate(outcome.advice.next_steps)]}</ul>
                             <div className="mt-5 rounded-xl border border-border bg-card p-4 shadow-sm">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
                                     <span className="eyebrow flex items-center gap-1.5 text-primary-deep"><FileText className="h-3.5 w-3.5"/> SLBFE 1989 Hotline Report Draft</span>
-                                    <button onClick={lambda -> None { copy_report(); }} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary-deep">
-                                        <Copy className="h-3.5 w-3.5"/> {if copied { "Copied to clipboard!"; } else { "Copy hotline report"; }}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={lambda -> None { share_whatsapp(); }} className="inline-flex items-center gap-1.5 rounded-md bg-[#25D366] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:brightness-110">
+                                            <Share2 className="h-3.5 w-3.5"/> WhatsApp Alert
+                                        </button>
+                                        <button onClick={lambda -> None { copy_report(); }} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary-deep">
+                                            <Copy className="h-3.5 w-3.5"/> {if copied { "Copied to clipboard!"; } else { "Copy hotline report"; }}
+                                        </button>
+                                    </div>
                                 </div>
                                 <blockquote className="mt-2.5 max-h-36 overflow-y-auto rounded-lg bg-muted/60 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
                                     {outcome.advice.report_draft or ("SafeRata report · Risk: " + outcome.band + "\n\n" + text)}
