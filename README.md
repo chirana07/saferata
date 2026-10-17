@@ -1,6 +1,6 @@
 # SafeRata: check a foreign job offer before you pay
 
-**AI Hackathon 2026 (Jaseci) · built in Jac 0.34.24 (98% Jac)**
+**AI Hackathon 2026 (Jaseci) · Built in Jac 0.34.24 · 93.5% Jac Codebase**
 
 Every year many thousands of Sri Lankans pay recruiters for jobs abroad. Some meet:
 - unlicensed agents
@@ -9,9 +9,11 @@ Every year many thousands of Sri Lankans pay recruiters for jobs abroad. Some me
 - fees paid into personal accounts
 - trafficking into scam compounds
 
-SafeRata is a **team of AI agents** that investigates a job offer against the **official SLBFE licensed-agency register (live)**, argues the case for and against, and tells the worker what to do before they pay.
+SafeRata is an **autonomous team of AI agents** that investigates a job offer against the **official SLBFE licensed-agency register (live)**, argues the case for and against in a multi-agent courtroom debate, and tells the worker what to do before they pay.
 
-> Live demo: _Jac Hammer link coming_ · Team doc: see [docs/PROPOSAL.md](docs/PROPOSAL.md)
+> **Primary App (`main`):** 100% Native Jac full-stack application (`main.jac` + Jac JSX frontend) running on port 8000.  
+> **Companion React UI:** Preserved on branch [`companion/web-ui`](https://github.com/chirana07/saferata/tree/companion/web-ui) as an alternative client connecting to the Jac API.  
+> **Evaluation & Verification:** 19/19 unit tests, 11/11 E2E API checks, 8/8 evaluation scenarios passing. Live register verified.
 
 ## What it does
 

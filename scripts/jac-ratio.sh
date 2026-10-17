@@ -7,7 +7,7 @@ find "$DIR" -type f \
   \( -name '*.jac' -o -name '*.py' -o -name '*.js' -o -name '*.jsx' -o -name '*.ts' \
      -o -name '*.tsx' -o -name '*.css' -o -name '*.html' -o -name '*.sql' -o -name '*.sh' \) \
   -not -path '*/.jac/*' -not -path '*/node_modules/*' -not -path '*/dist/*' \
-  -not -path '*/build/*' -not -path '*/.git/*' -not -path '*/.claude/*' -not -path '*/web-ui/*' -print0 |
+  -not -path '*/build/*' -not -path '*/.git/*' -not -path '*/.claude/*' -print0 |
 xargs -0 awk 'NF { ext=FILENAME; sub(/.*\./, "", ext); n[ext]++; t++ }
   END {
     if (t == 0) { print "no source files found"; exit 1 }
