@@ -9,6 +9,8 @@ glob SAMPLE_TRAFFICKING = "URGENT HIRING!!! IT / Data Entry jobs in THAILAND\nSa
 
 glob SAMPLE_IMPERSONATION = "A T C GLOBAL HOLDINGS (PVT) LTD - Licence No 3500\nQatar - House Driver vacancies. Salary QAR 1800. Employment visa.\nRegistration fee Rs. 75,000 must be paid before interview to reserve your place.\nContact our recruitment officer on WhatsApp 0789 123 456";
 
+glob SAMPLE_VAGUE = "Hi brother, good job in Saudi Arabia, driver, salary SAR 2000. Our sir can arrange everything quickly. Send your passport copy and Rs. 50,000 to start the process. Call Kamal 0751112233";
+
 glob SAMPLE_GENUINE = "A T C GLOBAL HOLDINGS (PVT) LTD (SLBFE Licence No 3500)\nVacancy: Light vehicle driver - Qatar. Employment visa sponsored by employer.\nSalary QAR 2000 + accommodation. 2-year contract provided before departure.\nAll payments only at our Nugegoda office with official receipt, after you sign the contract.\nCall 0112818268 or email info@atcs.lk";
 
 def band_color(band: str) -> str {
@@ -19,6 +21,19 @@ def band_color(band: str) -> str {
         return "#d68910";
     }
     return "#1e8449";
+}
+
+def source_color(source: str) -> str {
+    if "register" in source {
+        return "#1f618d";
+    }
+    if "guidance" in source {
+        return "#117864";
+    }
+    if "community" in source {
+        return "#6c3483";
+    }
+    return "#717d7e";
 }
 
 def agent_color(agent: str) -> str {
@@ -71,9 +86,18 @@ def:pub app -> JsxElement {
     async def submit_answers -> None;
 
     <div style={{"maxWidth": "980px", "margin": "0 auto", "padding": "24px 16px", "fontFamily": "system-ui, -apple-system, Segoe UI, sans-serif", "color": "#1b2631"}}>
-        <header style={{"display": "flex", "alignItems": "baseline", "gap": "12px", "flexWrap": "wrap"}}>
-            <h1 style={{"margin": "0", "fontSize": "30px"}}>SafeRata</h1>
-            <span style={{"color": "#566573"}}>Check a foreign job offer before you pay. A team of AI agents investigates it against the official SLBFE register.</span>
+        <header style={{"background": "#0b2545", "color": "white", "borderRadius": "16px", "padding": "22px 24px"}}>
+            <div style={{"display": "flex", "alignItems": "baseline", "gap": "12px", "flexWrap": "wrap"}}>
+                <h1 style={{"margin": "0", "fontSize": "32px", "letterSpacing": "-0.5px"}}>SafeRata</h1>
+                <span style={{"opacity": "0.85", "fontSize": "15px"}}>Check a foreign job offer before you pay.</span>
+            </div>
+            <p style={{"margin": "8px 0 12px", "opacity": "0.9", "maxWidth": "720px"}}>A team of AI agents investigates the offer against the official SLBFE licensed-agency register, argues the case for and against, and tells you what to do next.</p>
+            <div style={{"display": "flex", "gap": "8px", "flexWrap": "wrap", "fontSize": "12px", "fontWeight": "600"}}>
+                <span style={{"background": "#13315c", "borderRadius": "999px", "padding": "4px 10px"}}>Live SLBFE register</span>
+                <span style={{"background": "#13315c", "borderRadius": "999px", "padding": "4px 10px"}}>10 cooperating agents</span>
+                <span style={{"background": "#13315c", "borderRadius": "999px", "padding": "4px 10px"}}>Evidence-quoted verdicts</span>
+                <span style={{"background": "#13315c", "borderRadius": "999px", "padding": "4px 10px"}}>Community scam graph</span>
+            </div>
         </header>
         <nav style={{"display": "flex", "gap": "8px", "marginTop": "14px"}}>
             <button onClick={lambda -> None { tab = "check"; }}
@@ -101,6 +125,7 @@ def:pub app -> JsxElement {
                 <button onClick={lambda -> None { text = SAMPLE_TRAFFICKING; }}>Thailand IT job</button>
                 <button onClick={lambda -> None { text = SAMPLE_IMPERSONATION; }}>Agency impersonation</button>
                 <button onClick={lambda -> None { text = SAMPLE_GENUINE; }}>Genuine offer</button>
+                <button onClick={lambda -> None { text = SAMPLE_VAGUE; }}>Vague WhatsApp message</button>
             </div>
             {if busy {
                 <ol id="progress" style={{"color": "#1b4f72", "marginBottom": "0"}}>
@@ -151,6 +176,9 @@ def:pub app -> JsxElement {
                     </div>
                     <div style={{"textAlign": "right"}}>
                         <div style={{"fontSize": "34px", "fontWeight": "800"}}>{f"{outcome.score}/100"}</div>
+<div style={{"background": "rgba(255,255,255,0.3)", "borderRadius": "999px", "height": "8px", "width": "220px", "margin": "4px 0 6px auto"}}>
+                            <div style={{"background": "white", "borderRadius": "999px", "height": "8px", "width": f"{outcome.score}%"}}></div>
+                        </div>
                         <div style={{"fontSize": "12px", "opacity": "0.9"}}>{f"official rules & register {outcome.hard_points} + agent judgement {outcome.soft_points} (max 20)"}</div>
                     </div>
                 </div>
@@ -176,7 +204,10 @@ def:pub app -> JsxElement {
                     <div key={i} style={{"borderLeft": "5px solid " + band_color("DANGER" if f.points >= 25 else "BE CAREFUL"), "background": "#fbfcfc", "padding": "10px 14px", "marginBottom": "10px", "borderRadius": "6px"}}>
                         <div style={{"display": "flex", "justifyContent": "space-between", "gap": "8px", "flexWrap": "wrap"}}>
                             <b>{f.title}</b>
-                            <span style={{"fontSize": "12px", "color": "#566573"}}>{f"+{f.points} pts | {f.source} | {f.agent}"}</span>
+                            <span style={{"display": "flex", "gap": "6px", "alignItems": "center", "flexWrap": "wrap"}}>
+                                <span style={{"background": source_color(f.source), "color": "white", "borderRadius": "4px", "padding": "1px 6px", "fontSize": "11px"}}>{f.source}</span>
+                                <span style={{"fontSize": "12px", "color": "#566573"}}>{f"+{f.points} pts | {f.agent}"}</span>
+                            </span>
                         </div>
                         <div style={{"fontStyle": "italic", "color": "#7b241c", "margin": "4px 0"}}>{"\"" + f.evidence + "\""}</div>
                         <div>{f.explanation}</div>

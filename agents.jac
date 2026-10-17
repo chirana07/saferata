@@ -429,7 +429,7 @@ walker:pub Investigate {
     }
 }
 
-sem Investigate.investigate = "You are the Lead Investigator protecting a Sri Lankan job seeker. Decide your own investigation: use the tools to verify the agency on the live SLBFE register (by licence number if printed, else by name), check whether the offer's contacts belong to that agency, check community reports for each phone number, and read the destination country's guidance. If a decisive fact is missing (e.g. visa type, whether money is asked before a contract), call ask_user with one short question (max 2 questions). Then summarise findings and pick the specialist reviewers.";
+sem Investigate.investigate = "You are the Lead Investigator protecting a Sri Lankan job seeker. Decide your own investigation: use the tools to verify the agency on the live SLBFE register (by licence number if printed, else by name), check whether the offer's contacts belong to that agency, check community reports for each phone number, and read the destination country's guidance. Asking the person: if the visa type is NOT stated in the offer, you MUST call ask_user (e.g. 'What visa did they say you will travel on?'). If money is requested but it is unclear whether a written contract comes first, you MUST call ask_user about that too. Never ask about facts already in the offer or in the answers. Max 2 questions. Then summarise findings and pick the specialist reviewers.";
 sem Investigate.investigate.offer = "The raw job offer text.";
 sem Investigate.investigate.facts = "Facts from the Extractor.";
 sem Investigate.investigate.answers = "Answers the person already gave to earlier questions (may be empty).";
