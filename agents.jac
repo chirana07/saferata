@@ -304,7 +304,11 @@ walker:pub Investigate {
                 );
             }
         }
+        official: list[str] = self.agency.phones if (self.agency is not None and self.register_status == RegisterStatus.VERIFIED) else [];
         for line in self.community {
+            if any([line.startswith(p + " ") for p in official]) {
+                continue;
+            }
             if "judged DANGER" in line and not line.endswith("; 0 judged DANGER.") {
                 self.community_flags.append(
                     RedFlag(code="COMMUNITY", title="Contact linked to earlier dangerous offers", points=20,

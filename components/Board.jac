@@ -143,6 +143,7 @@ def:pub JobBoard -> JsxElement {
                 {if len(j.top_flags) > 0 {
                     <div style={{"fontSize": "13px", "color": "#7b241c"}}>{"Agent findings: " + "; ".join(j.top_flags)}</div>
                 }}
+                {[<div key={i} style={{"marginTop": "6px", "padding": "6px 10px", "background": "#f5eef8", "borderRadius": "6px", "color": "#512e5f", "fontWeight": "600", "fontSize": "14px"}}>{"Impersonation alert: " + w}</div> for (i, w) in enumerate(j.warnings)]}
                 {if j.credible_fraud_reports > 0 {
                     <div style={{"marginTop": "6px", "fontWeight": "700", "color": "#c0392b"}}>{f"{j.credible_fraud_reports} credible fraud report(s) from workers"}</div>
                 }}

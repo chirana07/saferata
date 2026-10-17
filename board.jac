@@ -22,7 +22,8 @@ node Job {
         score: int = 0,
         base_score: int = 0,
         summary: str = "",
-        top_flags: list[str] = [];
+        top_flags: list[str] = [],
+        warnings: list[str] = [];
 }
 
 node Review {
@@ -33,6 +34,7 @@ node Review {
         credibility: int = 0,
         status: str = "",
         reason: str = "",
+        impersonation: bool = False,
         created_at: str = "";
 }
 
@@ -61,6 +63,7 @@ obj JobView {
         score: int,
         summary: str,
         top_flags: list[str],
+        warnings: list[str],
         reviews: list[ReviewView],
         credible_fraud_reports: int;
 }
@@ -75,14 +78,19 @@ obj PostResult {
 obj ReviewAssessment {
     has credibility: int,
         credible: bool,
+        impersonation: bool,
+        scam_contacts: list[str],
         reason: str;
 }
 
 sem ReviewAssessment.credibility = "0-100: how credible and specific this review is (concrete amounts, dates, names, consistent with the job) vs vague, emotional, or unrelated.";
 sem ReviewAssessment.credible = "True only if the review is specific, relevant to THIS job/agency, and its evidence supports the claim.";
+sem ReviewAssessment.impersonation = "True if the reviewer was cheated by someone PRETENDING to be from this agency (e.g. used a phone number or account that is not the agency's registered contact), rather than by the agency itself.";
+sem ReviewAssessment.scam_contacts = "Phone numbers / accounts the scammer used, copied from the review or evidence. Empty if none.";
 sem ReviewAssessment.reason = "One sentence explaining the assessment.";
 
-def verify_review(job_title: str, agency: str, job_description: str, kind: str, review: str, evidence: str, earlier_reviews: list[str]) -> ReviewAssessment by llm(temperature=0.0);
+def verify_review(job_title: str, agency: str, registered_contacts: list[str], job_description: str, kind: str, review: str, evidence: str, earlier_reviews: list[str]) -> ReviewAssessment by llm(temperature=0.0);
+sem verify_review.registered_contacts = "The agency's official phone numbers/email from the SLBFE register. A scammer using a different number is impersonating the agency.";
 sem verify_review = "You are the Review Verifier agent on a platform that protects Sri Lankan migrant workers. Judge whether a worker's review of a job posting is credible. Guard against both scams being hidden and fake reviews smearing honest agencies: require specifics (amounts paid, dates, what was promised vs what happened) and evidence that matches the claim. Consider consistency with earlier reviews.";
 sem verify_review.evidence = "Evidence the reviewer supplied (e.g. receipt text, chat excerpt, bank slip details).";
 sem verify_review.earlier_reviews = "Earlier reviews of the same job, for consistency checks.";
@@ -104,10 +112,10 @@ def _band_for(score: int) -> str {
 def job_view(j: Job) -> JobView {
     reviews = [r for r in [j -->[?:Review]]];
     views = [ReviewView(author=r.author, kind=r.kind, text=r.text, evidence=r.evidence, credibility=r.credibility, status=r.status, reason=r.reason, created_at=r.created_at) for r in reviews];
-    fraud = len([r for r in reviews if r.kind == "fraud" and r.status == "credible"]);
+    fraud = len([r for r in reviews if r.kind == "fraud" and r.status == "credible" and not r.impersonation]);
     return JobView(id=jid(j), title=j.title, country=j.country, salary=j.salary, description=j.description,
         licence_no=j.licence_no, agency_name=j.agency_name, contact_phone=j.contact_phone, posted_at=j.posted_at,
-        band=j.band, score=j.score, summary=j.summary, top_flags=j.top_flags, reviews=views, credible_fraud_reports=fraud);
+        band=j.band, score=j.score, summary=j.summary, top_flags=j.top_flags, warnings=j.warnings, reviews=views, credible_fraud_reports=fraud);
 }
 
 walker:pub PostJob {
@@ -191,20 +199,45 @@ walker:pub AddReview {
         }
         job: Job = target;
         steps: list[Step] = [];
+        ags = [a for a in [root -->[?:Agency]] if a.licence_no == job.licence_no];
+        official: list[str] = (ags[0].phones + [ags[0].email]) if ags else [];
         earlier = [f"[{r.kind}, {r.status}] {r.text}" for r in [job -->[?:Review]]];
-        a = verify_review(job.title, job.agency_name, job.description, self.kind, self.text, self.evidence, earlier);
+        a = verify_review(job.title, job.agency_name, official, job.description, self.kind, self.text, self.evidence, earlier);
         status = "credible" if a.credible and a.credibility >= 60 else "unverified";
-        steps.append(Step(agent="Review Verifier", action="assess", detail=f"credibility {a.credibility}/100 -> {status}: {a.reason}"));
-        job ++> Review(author=self.author or "Anonymous", kind=self.kind, text=self.text, evidence=self.evidence,
-            credibility=a.credibility, status=status, reason=a.reason, created_at=_now());
+        imp = a.impersonation and self.kind == "fraud";
+        steps.append(Step(agent="Review Verifier", action="assess", detail=f"credibility {a.credibility}/100 -> {status}" + (" (impersonation of the agency)" if imp else "") + f": {a.reason}"));
+        rv = Review(author=self.author or "Anonymous", kind=self.kind, text=self.text, evidence=self.evidence,
+            credibility=a.credibility, status=status, reason=a.reason, impersonation=imp, created_at=_now());
+        job ++> rv;
 
-        credible_fraud = len([r for r in [job -->[?:Review]] if r.kind == "fraud" and r.status == "credible"]);
+        if status == "credible" and imp {
+            scam = [normalise_phone(c) for c in a.scam_contacts if normalise_phone(c) and normalise_phone(c) not in official];
+            if scam {
+                job.warnings = job.warnings + [f"Scammers are impersonating this agency using {', '.join(scam)}. Only trust the registered numbers: {', '.join([o for o in official if o])}."];
+            }
+            warned = 0;
+            for v in scam {
+                found = [x for x in [root -->[?:Contact]] if x.value == v];
+                ct = found[0] if found else Contact(value=v, kind="phone");
+                if not found {
+                    root ++> ct;
+                }
+                rv ++> ct;
+                for o in [ct <--[?:Offer]] {
+                    o ++> Alert(message=f"The number {v} in an offer you checked has been credibly reported for impersonating {job.agency_name}.", created_at=_now());
+                    warned += 1;
+                }
+            }
+            steps.append(Step(agent="Network Guardian", action="impersonation_alert", detail=f"flagged scam number(s) {', '.join(scam) or 'none given'}; the agency's own score is unchanged; warned {warned} earlier check(s)"));
+        }
+
+        credible_fraud = len([r for r in [job -->[?:Review]] if r.kind == "fraud" and r.status == "credible" and not r.impersonation]);
         new_score = min(100, job.base_score + 30 * credible_fraud);
         if new_score != job.score {
             old_band = job.band;
             job.score = new_score;
             job.band = _band_for(new_score);
-            steps.append(Step(agent="Supervisor", action="re-score", detail=f"{credible_fraud} credible fraud report(s): {old_band} -> {job.band} ({new_score}/100)"));
+            steps.append(Step(agent="Supervisor", action="re-score", detail=f"{credible_fraud} credible fraud report(s) against the agency: {old_band} -> {job.band} ({new_score}/100)"));
             if job.band == "DANGER" and old_band != "DANGER" {
                 warned = 0;
                 for ct in [job -->[?:Contact]] {
