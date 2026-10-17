@@ -1,6 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { companies as initialCompanies, jobs as demoJobs, type Company } from "@/lib/data";
+import {
+  companies as initialCompanies,
+  jobs as demoJobs,
+  type Company,
+  registerLiveAgencies,
+} from "@/lib/data";
 import { apiListAgencies } from "@/lib/api";
 import { PageHeader, VerifyBadge, SimulatedTag } from "@/components/sr/ui";
 
@@ -57,6 +62,9 @@ function Companies() {
             role: "Applicant report",
           })),
         }));
+
+        // Register live agencies in global cache so details page can resolve them
+        registerLiveAgencies(liveCompanies);
 
         // Merge with initial demo companies to prevent loss of existing data
         const merged = [...liveCompanies];

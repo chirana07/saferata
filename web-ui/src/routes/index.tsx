@@ -1,19 +1,29 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState, useEffect } from "react";
-import { Search, SlidersHorizontal, ArrowRight, X } from "lucide-react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { Search, SlidersHorizontal, ArrowRight, X, RotateCcw, AlertTriangle, Loader2 } from "lucide-react";
 import {
   jobs as demoJobs,
   countries as initialCountries,
   occupations as initialOccupations,
-  trustStats,
+  trustStats as fallbackTrustStats,
   getCompany,
   getJob,
   formatMoney,
   backendJobToUiJob,
   registerLiveJobs,
+  registerLiveAgencies,
+  getAllJobs,
   type Job,
+  type Company,
 } from "@/lib/data";
-import { apiListJobs } from "@/lib/api";
+import {
+  apiListJobs,
+  apiListAgencies,
+  apiRecentChecks,
+  type BackendCheckView,
+  type BackendAgencyView,
+  type BackendJobView,
+} from "@/lib/api";
 import { useStore, profileCompletion } from "@/lib/store";
 import {
   JobCard,
@@ -53,7 +63,7 @@ function Discover() {
   const profile = useStore((s) => s.profile);
   const saved = useStore((s) => s.saved);
   const pct = profileCompletion(profile);
-  const [jobs, setJobs] = useState<Job[]>(demoJobs ?? []);
+  const [jobs, setJobs] = useState<Job[]>(() => demoJobs ?? []);
   const allJobs = jobs;
   const [isLiveBackend, setIsLiveBackend] = useState(false);
   const [q, setQ] = useState("");
@@ -66,22 +76,86 @@ function Discover() {
   const [sort, setSort] = useState<Sort>("relevance");
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    apiListJobs().then(({ jobs: backendJobs, error }) => {
-      if (!active) return;
-      if (backendJobs && backendJobs.length > 0) {
-        const liveConverted = backendJobs.map(backendJobToUiJob);
+  // Trust Intelligence Panel States
+  const [trustLoading, setTrustLoading] = useState(true);
+  const [trustError, setTrustError] = useState<string | null>(null);
+  const [backendChecks, setBackendChecks] = useState<BackendCheckView[]>([]);
+  const [backendAgencies, setBackendAgencies] = useState<BackendAgencyView[]>([]);
+  const [liveJobsCount, setLiveJobsCount] = useState<number | null>(null);
+  const isFetchingRef = useRef(false);
+
+  const fetchTrustData = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    setTrustLoading(true);
+    setTrustError(null);
+
+    try {
+      const [jobsRes, agenciesRes, checksRes] = await Promise.all([
+        apiListJobs(),
+        apiListAgencies(),
+        apiRecentChecks(6),
+      ]);
+
+      let hasLive = false;
+
+      if (jobsRes.jobs && jobsRes.jobs.length > 0) {
+        hasLive = true;
+        const liveConverted = jobsRes.jobs.map(backendJobToUiJob);
         registerLiveJobs(liveConverted);
-        // Combine live jobs with demo jobs (live jobs first)
         setJobs([...liveConverted, ...(demoJobs ?? [])]);
-        setIsLiveBackend(true);
+        setLiveJobsCount(jobsRes.jobs.length);
+      } else if (jobsRes.jobs) {
+        setLiveJobsCount(0);
       }
-    });
-    return () => {
-      active = false;
-    };
+
+      if (agenciesRes.agencies && agenciesRes.agencies.length > 0) {
+        hasLive = true;
+        setBackendAgencies(agenciesRes.agencies);
+        const mappedAgencies: Company[] = agenciesRes.agencies.map((a) => ({
+          id: `agency-${a.licence_no.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          name: a.name,
+          type: "Recruitment agency" as const,
+          location: "Sri Lanka",
+          licence: a.licence_no,
+          licenceState: "verified" as const,
+          lastChecked: a.checked_at ? a.checked_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          summary: `SLBFE Licensed Agency #${a.licence_no}. Contact: ${a.phones.join(", ") || a.email || "Official register"}`,
+          related: [],
+          reviews: a.warnings.map((w, idx) => ({
+            id: `warn-${idx}`,
+            date: new Date().toISOString().slice(0, 10),
+            category: "Misleading terms" as const,
+            status: "Moderated" as const,
+            evidence: "Documented" as const,
+            text: w,
+            role: "Applicant report",
+          })),
+        }));
+        registerLiveAgencies(mappedAgencies);
+      }
+
+      if (checksRes.checks) {
+        if (checksRes.checks.length > 0) hasLive = true;
+        setBackendChecks(checksRes.checks);
+      }
+
+      setIsLiveBackend(hasLive);
+
+      if (jobsRes.error && agenciesRes.error && checksRes.error) {
+        setTrustError(jobsRes.error.message || "Could not reach Jac backend service.");
+      }
+    } catch (err: unknown) {
+      setTrustError("Failed to fetch trust intelligence. Tap retry to reconnect.");
+    } finally {
+      setTrustLoading(false);
+      isFetchingRef.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    fetchTrustData();
+  }, [fetchTrustData]);
 
   const countries = useMemo(() => Array.from(new Set(allJobs.map((j) => j.country))), [allJobs]);
   const occupations = useMemo(
@@ -336,40 +410,176 @@ function Discover() {
             </div>
           )}
 
-          <aside className="rounded-2xl border border-border bg-card p-6 shadow-card">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Trust intelligence</h2>
-              <SimulatedTag />
-            </div>
-            <dl className="mt-5 grid grid-cols-3 divide-x divide-border border-y border-border py-4 text-center">
-              <div>
-                <dd className="font-display text-3xl font-bold">{trustStats.listingsChecked}</dd>
-                <dt className="eyebrow mt-1">Listings</dt>
-              </div>
-              <div>
-                <dd className="font-display text-3xl font-bold">{trustStats.agencies}</dd>
-                <dt className="eyebrow mt-1">Agencies</dt>
-              </div>
-              <div>
-                <dd className="font-display text-3xl font-bold text-risk">{trustStats.highRisk}</dd>
-                <dt className="eyebrow mt-1">High risk</dt>
-              </div>
-            </dl>
-            <ol className="mt-4 space-y-3">
-              {trustStats.activity.map((a) => (
-                <li key={a.t} className="grid grid-cols-[auto_1fr] gap-3 text-xs">
-                  <span className="font-mono text-muted-foreground">{a.t.slice(5, 10)}</span>
-                  <span>{a.text}</span>
-                </li>
-              ))}
-            </ol>
-            <Link
-              to="/investigate"
-              className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-primary"
-            >
-              Check an offer you received <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </aside>
+          {/* Trust Intelligence Panel */}
+          {(() => {
+            // Computed counts from real data or graceful fallback
+            const hasBackendData = isLiveBackend && !trustError;
+            const listingsCount =
+              liveJobsCount !== null ? liveJobsCount : hasBackendData ? allJobs.length : fallbackTrustStats.listingsChecked;
+            const agenciesCount =
+              backendAgencies.length > 0 ? backendAgencies.length : fallbackTrustStats.agencies;
+            
+            // Explicit High-Risk calculation rule:
+            // Jobs with band === 'DANGER' or score >= 60, plus checks with verdict === 'DANGER'
+            const highRiskJobs = (liveJobsCount !== null ? allJobs.slice(0, liveJobsCount) : allJobs).filter(
+              (j) => j.risk === "critical" || j.risk === "high" || j.findings?.some((f) => f.severity === "critical"),
+            ).length;
+            const highRiskChecks = backendChecks.filter(
+              (c) => c.verdict === "DANGER" || c.score >= 60,
+            ).length;
+            const highRiskCount = hasBackendData
+              ? highRiskJobs + highRiskChecks
+              : fallbackTrustStats.highRisk;
+
+            // Generate recent activity from real backend checks/agencies or genuine events
+            type ActivityItem = {
+              id: string;
+              time: string;
+              text: string;
+              to?: string;
+              type: "check" | "agency" | "listing" | "fallback";
+              isDanger?: boolean;
+            };
+
+            const activities: ActivityItem[] = [];
+
+            if (backendChecks.length > 0) {
+              backendChecks.slice(0, 5).forEach((c) => {
+                const timeStr = c.created_at ? (c.created_at.length >= 16 ? c.created_at.slice(11, 16) : c.created_at.slice(5, 10)) : "Today";
+                const isDanger = c.verdict === "DANGER" || c.score >= 60;
+                activities.push({
+                  id: `chk-${c.id}`,
+                  time: timeStr,
+                  text: `${c.job || "Offer"} in ${c.country || "overseas"} checked → ${c.verdict}${c.alerts?.length ? ` · ${c.alerts.length} alert(s)` : ""}`,
+                  to: `/investigate?offer=${encodeURIComponent(`${c.job} in ${c.country} (${c.agency})`)}`,
+                  type: "check",
+                  isDanger,
+                });
+              });
+            } else if (backendAgencies.length > 0) {
+              backendAgencies.slice(0, 4).forEach((a) => {
+                const timeStr = a.checked_at ? a.checked_at.slice(5, 10) : "Today";
+                activities.push({
+                  id: `ag-${a.id}`,
+                  time: timeStr,
+                  text: `${a.name} (Licence #${a.licence_no}) confirmed against SLBFE register`,
+                  to: `/companies/agency-${a.licence_no.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+                  type: "agency",
+                });
+              });
+            } else if (!hasBackendData) {
+              fallbackTrustStats.activity.forEach((a, idx) => {
+                activities.push({
+                  id: `demo-${idx}`,
+                  time: a.t.slice(5, 10),
+                  text: a.text,
+                  type: "fallback",
+                });
+              });
+            }
+
+            return (
+              <aside className="rounded-2xl border border-border bg-card p-6 shadow-card flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-bold">Trust intelligence</h2>
+                      {trustLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                    </div>
+                    {hasBackendData ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-safe-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-safe">
+                        ● Live SLBFE graph
+                      </span>
+                    ) : trustError ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-risk-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-risk">
+                        Backend unavailable
+                      </span>
+                    ) : (
+                      <SimulatedTag />
+                    )}
+                  </div>
+
+                  {trustError && (
+                    <div className="mt-3 flex items-center justify-between rounded-lg border border-risk/30 bg-risk-soft/40 p-2.5 text-xs text-risk">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        <span>Offline mode: Showing cached verification data</span>
+                      </div>
+                      <button
+                        onClick={() => fetchTrustData()}
+                        className="inline-flex items-center gap-1 font-semibold underline hover:no-underline ml-2"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Retry
+                      </button>
+                    </div>
+                  )}
+
+                  <dl className="mt-5 grid grid-cols-3 divide-x divide-border border-y border-border py-4 text-center">
+                    <div>
+                      <dd className="font-display text-3xl font-bold">{listingsCount}</dd>
+                      <dt className="eyebrow mt-1">Listings</dt>
+                    </div>
+                    <div>
+                      <dd className="font-display text-3xl font-bold">{agenciesCount}</dd>
+                      <dt className="eyebrow mt-1">Agencies</dt>
+                    </div>
+                    <div>
+                      <dd className="font-display text-3xl font-bold text-risk">{highRiskCount}</dd>
+                      <dt className="eyebrow mt-1">High risk</dt>
+                    </div>
+                  </dl>
+
+                  {activities.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-muted-foreground">
+                      <p>No recent verification events recorded in graph.</p>
+                      <button
+                        onClick={() => fetchTrustData()}
+                        className="mt-2 text-primary font-semibold hover:underline inline-flex items-center gap-1"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Refresh
+                      </button>
+                    </div>
+                  ) : (
+                    <ol className="mt-4 space-y-3">
+                      {activities.map((a) => (
+                        <li key={a.id} className="grid grid-cols-[auto_1fr] gap-3 text-xs group">
+                          <span className="font-mono text-muted-foreground">{a.time}</span>
+                          {a.to ? (
+                            <Link
+                              to={a.to}
+                              className={`transition-colors hover:text-primary ${a.isDanger ? "font-semibold text-risk" : "text-foreground"}`}
+                            >
+                              {a.text} <ArrowRight className="inline h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </Link>
+                          ) : (
+                            <span className={a.isDanger ? "font-semibold text-risk" : "text-foreground"}>
+                              {a.text}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+
+                <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
+                  <Link
+                    to="/investigate"
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:text-primary-deep"
+                  >
+                    Check an offer you received <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                  <button
+                    onClick={() => fetchTrustData()}
+                    title="Refresh Trust Intelligence"
+                    className="text-muted-foreground hover:text-primary p-1 rounded transition-colors"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </aside>
+            );
+          })()}
         </section>
       )}
 

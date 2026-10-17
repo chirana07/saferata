@@ -2,15 +2,50 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, Flag } from "lucide-react";
 import { toast } from "sonner";
-import { getCompany, jobs, type Review } from "@/lib/data";
+import { getCompany, jobs, getAllJobs, type Review } from "@/lib/data";
 import { apiAddReview } from "@/lib/api";
 import { setState, useStore } from "@/lib/store";
 import { VerifyBadge, SafetyIndicator, SimulatedTag, EmptyState } from "@/components/sr/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/companies/$id")({
-  loader: ({ params }) => {
-    const company = getCompany(params.id);
+  loader: async ({ params }) => {
+    let company = getCompany(params.id);
+    if (!company || company.name === "Unverified Agency") {
+      try {
+        const { apiListAgencies } = await import("@/lib/api");
+        const { registerLiveAgencies } = await import("@/lib/data");
+        const { agencies } = await apiListAgencies();
+        if (agencies && agencies.length > 0) {
+          const liveCompanies: import("@/lib/data").Company[] = agencies.map((a) => ({
+            id: `agency-${a.licence_no.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+            name: a.name,
+            type: "Recruitment agency" as const,
+            location: "Sri Lanka",
+            licence: a.licence_no,
+            licenceState: "verified" as const,
+            lastChecked: a.checked_at
+              ? a.checked_at.slice(0, 10)
+              : new Date().toISOString().slice(0, 10),
+            summary: `SLBFE Licensed Agency #${a.licence_no}. Contact: ${a.phones.join(", ") || a.email || "Official register"}`,
+            related: [],
+            reviews: a.warnings.map((w, idx) => ({
+              id: `warn-${idx}`,
+              date: new Date().toISOString().slice(0, 10),
+              category: "Misleading terms" as const,
+              status: "Moderated" as const,
+              evidence: "Documented" as const,
+              text: w,
+              role: "Applicant report",
+            })),
+          }));
+          registerLiveAgencies(liveCompanies);
+          company = getCompany(params.id);
+        }
+      } catch {
+        /* fallback to getCompany */
+      }
+    }
     if (!company) throw notFound();
     return { company };
   },
@@ -54,7 +89,12 @@ function CompanyPage() {
   const { company: c } = Route.useLoaderData();
   const extra = useStore((s) => s.reviews[c.id] ?? NO_REVIEWS);
   const reviews = [...extra, ...c.reviews];
-  const listings = jobs.filter((j) => j.agencyId === c.id || j.employerId === c.id);
+  const listings = getAllJobs().filter(
+    (j) =>
+      j.agencyId === c.id ||
+      j.employerId === c.id ||
+      (c.licence && j.matchReasons?.some((r) => r.includes(c.licence!))),
+  );
   const [form, setForm] = useState<{ category: Review["category"]; role: string; text: string }>({
     category: "Unpaid salary",
     role: "",

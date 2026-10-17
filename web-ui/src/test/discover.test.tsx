@@ -164,4 +164,90 @@ describe("Discover Route Component", () => {
     expect(await screen.findByText(/Your next chapter/i)).toBeInTheDocument();
     expect(screen.getByText(/Recommended for you/i)).toBeInTheDocument();
   });
+
+  it("renders live Trust Intelligence data and calculated stats correctly", async () => {
+    vi.spyOn(api, "apiListJobs").mockResolvedValue({
+      jobs: [
+        {
+          id: "j-live-1",
+          title: "Caregiver",
+          country: "Japan",
+          salary: "JPY 220,000",
+          salary_amount: 220000,
+          salary_currency: "JPY",
+          salary_lkr: 450000,
+          take_home_lkr: 400000,
+          agency_name: "Tokyo Care Recruiters",
+          licence_no: "3321",
+          band: "LOOKS SAFE",
+          score: 10,
+          summary: "Verified",
+          description: "Caregiver needed in Tokyo",
+          contact_phone: "+94112233445",
+          posted_at: "2026-10-17 12:00",
+          occupation: "Caregiver",
+          experience_years: 1,
+          contract_type: "Fixed term",
+          contract_months: 24,
+          accommodation: "Provided",
+          deductions: "",
+          worker_fee_lkr: 0,
+          top_flags: [],
+          warnings: [],
+          reviews: [],
+          credible_fraud_reports: 0,
+          appeals: [],
+          corrections: [],
+          appealable: [],
+        },
+      ],
+      error: null,
+    });
+
+    vi.spyOn(api, "apiListAgencies").mockResolvedValue({
+      agencies: [
+        {
+          id: "ag-1",
+          licence_no: "3321",
+          name: "Tokyo Care Recruiters",
+          phones: ["+94112233445"],
+          email: "info@tokyocare.lk",
+          valid_upto: "2027-12-31",
+          checked_at: "2026-10-17 10:00",
+          jobs: [],
+          reports: 0,
+          credible_fraud: 0,
+          warnings: [],
+          related_checks: [],
+          impersonator_numbers: [],
+        },
+      ],
+      error: null,
+    });
+
+    vi.spyOn(api, "apiRecentChecks").mockResolvedValue({
+      checks: [
+        {
+          id: "chk-99",
+          job: "Data Entry Clerk",
+          country: "Thailand",
+          agency: "Unknown Recruiter",
+          verdict: "DANGER",
+          score: 85,
+          created_at: "2026-10-17 14:30",
+          alerts: ["Tourist visa scam pattern detected"],
+        },
+      ],
+      error: null,
+    });
+
+    renderDiscover();
+
+    await waitFor(() => {
+      // Trust intelligence badge shows live SLBFE graph
+      expect(screen.getByText(/Live SLBFE graph/i)).toBeInTheDocument();
+      // Recent checks activity item is rendered
+      expect(screen.getByText(/Data Entry Clerk in Thailand checked → DANGER/i)).toBeInTheDocument();
+    });
+  });
 });

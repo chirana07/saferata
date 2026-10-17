@@ -31,7 +31,13 @@ export const Route = createFileRoute("/investigate")({
 type Phase = "idle" | "running" | "done";
 
 function Investigate() {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      return p.get("offer") || p.get("text") || "";
+    }
+    return "";
+  });
   const [phase, setPhase] = useState<Phase>("idle");
   const [step, setStep] = useState(0);
   const [stamps, setStamps] = useState<string[]>([]);
@@ -41,12 +47,21 @@ function Investigate() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const timer = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // If text was provided via query param, give user prompt to investigate
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      const queryText = p.get("offer") || p.get("text");
+      if (queryText && queryText.trim()) {
+        toast.info("Offer text loaded", {
+          description: "Click 'Investigate offer' to begin analysis.",
+        });
+      }
+    }
+    return () => {
       if (timer.current) clearInterval(timer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   const start = async (providedAnswers?: string[]) => {
     if (text.trim().length < 40) {
@@ -242,7 +257,7 @@ function Investigate() {
                     {a.name}
                     {stamps[i] && (
                       <span className="font-mono text-[10px] font-normal text-muted-foreground">
-                        {stamps[i]} · simulated
+                        {stamps[i]} · {isLive ? "live" : "simulated"}
                       </span>
                     )}
                   </p>

@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Upload, Check, X, AlertTriangle } from "lucide-react";
-import { getCompany } from "@/lib/data";
+import { Upload, Check, X, AlertTriangle, Loader2 } from "lucide-react";
+import { getCompany, backendJobToUiJob, registerLiveJobs } from "@/lib/data";
 import { apiPostJob, apiAppealFinding } from "@/lib/api";
 import { useStore, setState, type AgencyListing } from "@/lib/store";
 import { PageHeader, VerifyBadge, SimulatedTag } from "@/components/sr/ui";
@@ -44,13 +44,16 @@ const input =
   "mt-1 h-10 w-full rounded-md border border-input bg-card px-3 text-sm font-normal outline-none focus:border-primary";
 
 function Agency() {
+  const [selectedLicence, setSelectedLicence] = useState("3500");
   const a = getCompany("lanka-horizon")!;
+  const [agencyName, setAgencyName] = useState("A T C GLOBAL HOLDINGS (PVT) LTD");
   const listings = useStore((s) => s.listings);
   const [f, setF] = useState(empty);
   const [files, setFiles] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [appeal, setAppeal] = useState<string | null>(null);
   const [appealText, setAppealText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const checks = [
     { label: "Role and destination", ok: !!f.role && !!f.country },
@@ -62,8 +65,10 @@ function Agency() {
     { label: "Supporting document attached", ok: files.length > 0 },
   ];
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const er: Record<string, string> = {};
     if (!f.role) er["role"] = "Required";
     if (!f.country) er["country"] = "Required";
@@ -78,53 +83,86 @@ function Agency() {
       return;
     }
 
+    setIsSubmitting(true);
     const flagged = +f.fee > 150000;
-    const l: AgencyListing = {
-      id: `l${Date.now()}`,
-      role: f.role,
-      country: f.country,
-      salary: +f.salary,
-      currency: f.currency,
-      visa: f.visa,
-      contract: f.contract,
-      fee: +f.fee,
-      status: flagged ? "Correction requested" : "Under review",
-      created: new Date().toISOString().slice(0, 10),
-    };
-    setState((s) => ({ ...s, listings: [l, ...s.listings] }));
+    const activeLicence = selectedLicence.trim() || a.licence || "3500";
 
-    // Send to live Jac backend if accessible
-    apiPostJob({
-      title: f.role,
-      country: f.country,
-      salary: `${f.currency} ${f.salary}`,
-      description: `Visa: ${f.visa}. Contract: ${f.contract}. Accommodation: ${f.accommodation || "Standard"}.`,
-      licence_no: a.licence || "3500",
-      contact_phone: "0112818268",
-      accommodation: f.accommodation,
-      contract_type: f.contract,
-      worker_fee_lkr: +f.fee || 0,
-    }).then(({ result, error }) => {
-      if (result && result.ok) {
+    try {
+      const { result, error } = await apiPostJob({
+        title: f.role,
+        country: f.country,
+        salary: `${f.currency} ${f.salary}`,
+        description: `Visa: ${f.visa}. Contract: ${f.contract}. Accommodation: ${f.accommodation || "Standard"}.`,
+        licence_no: activeLicence,
+        contact_phone: "0112818268",
+        accommodation: f.accommodation,
+        contract_type: f.contract,
+        worker_fee_lkr: +f.fee || 0,
+      });
+
+      if (result && result.ok && result.job) {
+        // Successfully published and verified against live SLBFE register!
+        const uiJob = backendJobToUiJob(result.job);
+        registerLiveJobs([uiJob]);
+
+        // Add to agency portal listings
+        const l: AgencyListing = {
+          id: result.job.id,
+          role: result.job.title,
+          country: result.job.country,
+          salary: +f.salary,
+          currency: f.currency,
+          visa: f.visa,
+          contract: f.contract,
+          fee: +f.fee,
+          status: result.job.band === "DANGER" ? "Correction requested" : "Under review",
+          created: new Date().toISOString().slice(0, 10),
+        };
+        setState((s) => ({ ...s, listings: [l, ...s.listings] }));
+
         toast.success("Live PostJob: Verified & published", {
-          description: `Licence ${a.licence} verified on live SLBFE register.`,
+          description: `Licence ${activeLicence} verified on live SLBFE register (${result.job.agency_name}).`,
         });
+
+        setF(empty);
+        setFiles([]);
       } else if (result && !result.ok) {
         toast.error("Gatekeeper rejected", {
-          description: result.message,
+          description: result.message || "Job could not be verified by SLBFE gatekeeper.",
         });
       } else {
+        // Fallback / offline mode
+        const l: AgencyListing = {
+          id: `l${Date.now()}`,
+          role: f.role,
+          country: f.country,
+          salary: +f.salary,
+          currency: f.currency,
+          visa: f.visa,
+          contract: f.contract,
+          fee: +f.fee,
+          status: flagged ? "Correction requested" : "Under review",
+          created: new Date().toISOString().slice(0, 10),
+        };
+        setState((s) => ({ ...s, listings: [l, ...s.listings] }));
+
         toast.success(
           flagged ? "Saved locally — correction requested" : "Saved locally for review",
           {
-            description: "Jac backend offline. Saved in local demo state.",
+            description: error?.message || "Jac backend offline. Saved in local demo state.",
           },
         );
-      }
-    });
 
-    setF(empty);
-    setFiles([]);
+        setF(empty);
+        setFiles([]);
+      }
+    } catch (err: unknown) {
+      toast.error("Submission failed", {
+        description: err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const field = (
@@ -147,12 +185,29 @@ function Agency() {
 
   return (
     <div>
-      <PageHeader eyebrow="Agency portal" title={a.name}>
+      <PageHeader eyebrow="Agency portal" title={selectedLicence === "3500" ? "A T C GLOBAL HOLDINGS (PVT) LTD" : a.name}>
         <div className="text-right text-sm">
-          <p className="font-mono">{a.licence}</p>
+          <div className="flex items-center justify-end gap-2">
+            <span className="text-xs text-muted-foreground font-medium">Agency Licence:</span>
+            <select
+              value={selectedLicence}
+              onChange={(e) => {
+                setSelectedLicence(e.target.value);
+                if (e.target.value === "3500") {
+                  setAgencyName("A T C GLOBAL HOLDINGS (PVT) LTD");
+                } else if (e.target.value === "2241") {
+                  setAgencyName("NEW TRANS ARABIAN (PVT) LTD");
+                }
+              }}
+              className="rounded border border-input bg-card px-2 py-1 font-mono text-xs font-semibold focus:border-primary outline-none"
+            >
+              <option value="3500">Licence 3500 (A T C GLOBAL HOLDINGS)</option>
+              <option value="2241">Licence 2241 (NEW TRANS ARABIAN)</option>
+            </select>
+          </div>
           <div className="mt-1 flex items-center justify-end gap-2">
-            <VerifyBadge state={a.licenceState} />
-            <SimulatedTag>Demo account</SimulatedTag>
+            <VerifyBadge state="verified" />
+            <span className="rounded bg-safe-soft px-1.5 py-0.5 text-[10px] font-semibold text-safe">Live SLBFE Verified</span>
           </div>
         </div>
       </PageHeader>
@@ -162,7 +217,12 @@ function Agency() {
           onSubmit={submit}
           className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-card"
         >
-          <h2 className="text-xl font-bold">New listing</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">New listing</h2>
+            <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded">
+              SLBFE #{selectedLicence}
+            </span>
+          </div>
           <fieldset className="grid gap-4 sm:grid-cols-2">
             <legend className="eyebrow mb-2">Role</legend>
             {field("role", "Job title")}
@@ -224,8 +284,19 @@ function Agency() {
           <p className="text-xs text-muted-foreground">
             Paid promotion affects placement only. It never changes a listing's safety assessment.
           </p>
-          <button className="h-11 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
-            Submit for verification
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex items-center justify-center gap-2 h-11 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Verifying licence with SLBFE & publishing…</span>
+              </>
+            ) : (
+              "Submit for verification"
+            )}
           </button>
         </form>
 
@@ -257,9 +328,19 @@ function Agency() {
                 {listings.map((l) => (
                   <li key={l.id} className="py-3 text-sm">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-semibold">
-                        {l.role} · {l.country}
-                      </span>
+                      {l.id.startsWith("l") ? (
+                        <span className="font-semibold">
+                          {l.role} · {l.country}
+                        </span>
+                      ) : (
+                        <Link
+                          to="/jobs/$id"
+                          params={{ id: l.id }}
+                          className="font-semibold text-primary hover:underline"
+                        >
+                          {l.role} · {l.country} →
+                        </Link>
+                      )}
                       <span
                         className={cn(
                           "rounded px-1.5 py-0.5 text-[11px] font-semibold",

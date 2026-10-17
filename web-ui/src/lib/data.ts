@@ -703,6 +703,7 @@ export const trustStats = {
 };
 
 const liveJobsCache = new Map<string, Job>();
+const liveAgenciesCache = new Map<string, Company>();
 
 export function registerLiveJobs(newJobs: Job[]) {
   for (const j of newJobs) {
@@ -710,12 +711,30 @@ export function registerLiveJobs(newJobs: Job[]) {
   }
 }
 
+export function registerLiveAgencies(newAgencies: Company[]) {
+  for (const a of newAgencies) {
+    liveAgenciesCache.set(a.id, a);
+    if (a.licence) {
+      liveAgenciesCache.set(a.licence, a);
+    }
+  }
+}
+
 export const getJob = (id: string): Job | undefined => {
   return liveJobsCache.get(id) || jobs.find((j) => j.id === id);
 };
 
+export const getAllJobs = (): Job[] => {
+  const live = Array.from(liveJobsCache.values());
+  const existingIds = new Set(live.map((j) => j.id));
+  const fallback = jobs.filter((j) => !existingIds.has(j.id));
+  return [...live, ...fallback];
+};
+
 export const getCompany = (id: string): Company => {
-  const found = companies.find((c) => c.id === id);
+  const cached = liveAgenciesCache.get(id);
+  if (cached) return cached;
+  const found = companies.find((c) => c.id === id || (c.licence && c.licence === id));
   if (found) return found;
 
   // Resilient fallback for dynamically generated agency / employer IDs
