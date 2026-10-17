@@ -236,6 +236,21 @@ walker:pub PostJob {
             job.findings_raw = [SEP.join([f.title, str(f.points), f.evidence.replace(SEP, " "), f.explanation.replace(SEP, " "), f.source]) for f in c.flags];
             job.hard_points = c.hard_points;
         }
+        # Verify contact phone against the agency's official SLBFE registered phones
+        norm_contact = normalise_phone(self.contact_phone);
+        norm_official = [normalise_phone(p) for p in ag.phones if normalise_phone(p)];
+        if norm_contact and norm_official and norm_contact not in norm_official {
+            sec_warn = f"SECURITY NOTICE: The contact phone '{self.contact_phone}' is not among {ag.name}'s registered official SLBFE numbers ({', '.join(ag.phones)}). Verify directly with the head office before paying.";
+            if not any([sec_warn in w for w in job.warnings]) {
+                job.warnings = [sec_warn] + job.warnings;
+            }
+            if not any(["Contact details not registered" in f for f in job.top_flags]) {
+                job.top_flags = ["Contact details not registered to this agency (+30)"] + job.top_flags;
+                job.hard_points = job.hard_points + 30;
+                job.score = min(100, job.score + 30);
+                job.band = _band_for(job.score);
+            }
+        }
         root ++> job;
         existing = [a for a in [root -->[?:Agency]] if a.licence_no == ag.licence_no];
         node_ag = existing[0] if existing else Agency(licence_no=ag.licence_no, name=ag.name, phones=ag.phones, email=ag.email, valid_upto=ag.valid_upto, checked_at=reg.checked_at);
@@ -445,6 +460,10 @@ walker:pub AppealFinding {
         evidence: str = "";
 
     can appeal with Root entry {
+        if not self.explanation.strip() {
+            report PostResult(ok=False, message="Appeal explanation cannot be empty.");
+            disengage;
+        }
         target = jobj(self.job_id);
         if not isinstance(target, Job) {
             report PostResult(ok=False, message="Job not found.");
@@ -481,6 +500,10 @@ walker:pub RespondToReview {
         response: str;
 
     can respond with Root entry {
+        if not self.response.strip() {
+            report PostResult(ok=False, message="Agency response cannot be empty.");
+            disengage;
+        }
         target = jobj(self.review_id);
         if not isinstance(target, Review) {
             report PostResult(ok=False, message="Review not found.");
@@ -498,6 +521,10 @@ walker:pub RequestCorrection {
         details: str;
 
     can request with Root entry {
+        if not self.details.strip() {
+            report PostResult(ok=False, message="Correction details cannot be empty.");
+            disengage;
+        }
         target = jobj(self.job_id);
         if not isinstance(target, Job) {
             report PostResult(ok=False, message="Job not found.");

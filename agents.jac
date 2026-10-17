@@ -11,7 +11,7 @@ import from rules {
     RedFlag, Score, RegisterStatus,
     SRC_REGISTER, SRC_AGENT, SRC_COMMUNITY, SRC_GUIDANCE, GENERAL_GUIDANCE,
     country_note, critic, dedupe, score_flags,
-    find_phones, find_emails, find_licence, find_visa_word,
+    find_phones, find_emails, find_licence, find_visa_word, redact_pii,
     SRC_SALARY, to_lkr, salary_flag, licence_expiry_flag, text_similarity
 }
 import from slbfe { AgencyRecord, RegisterResult, search_by_licence, search_by_name, normalise_phone }
@@ -112,7 +112,7 @@ sem Advice.report_draft = "A short complaint the worker can send to the SLBFE (1
 def rule_flags(facts: OfferFacts) -> list[RedFlag] {
     flags: list[RedFlag] = [];
     visa = facts.visa_type.lower();
-    if "visit" in visa or "tourist" in visa {
+    if "visit" in visa or "tourist" in visa or "arrival" in visa or "permit" in visa or "pass" in visa {
         flags.append(
             RedFlag(
                 code="VISIT_VISA",
@@ -661,7 +661,8 @@ walker:pub Investigate {
         if f is None {
             return ("", 0);
         }
-        offer = Offer(text=self.text, job=f.job_title, country=f.country, agency_name=f.agency_name,
+        clean_text = redact_pii(self.text);
+        offer = Offer(text=clean_text[:500], job=f.job_title, country=f.country, agency_name=f.agency_name,
             verdict=band.replace(" ", "_").replace("LOOKS_SAFE", "SAFE").replace("BE_CAREFUL", "CAREFUL"),
             score=score, summary=summary, created_at=_now());
         root ++> offer;

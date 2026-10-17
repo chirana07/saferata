@@ -86,6 +86,7 @@ def evidence_in_text(evidence: str, text: str) -> bool {
 """Pattern-based extraction used by the Supervisor to double-check the Extractor agent."""
 def find_phones(text: str) -> list[str] {
     out: list[str] = [];
+    # Check for direct phone patterns
     for m in re.findall(r"\+?\d[\d\s\-]{7,16}\d", text) {
         raw: str = m;
         digits = re.sub(r"\D", "", raw);
@@ -96,6 +97,21 @@ def find_phones(text: str) -> list[str] {
             local = digits;
         } elif raw.strip().startswith("+") and 9 <= len(digits) <= 13 {
             local = "+" + digits;
+        }
+        if local and local not in out {
+            out.append(local);
+        }
+    }
+    # Check for wa.me / WhatsApp links (e.g. wa.me/94771234567 or wa.me/0771234567)
+    for m in re.findall(r"(?:wa\.me|whatsapp\.com\/send\?phone=)\/??\+?(\d{9,13})", text) {
+        raw_digits: str = m;
+        local = "";
+        if raw_digits.startswith("94") and len(raw_digits) == 11 {
+            local = "0" + raw_digits[2:];
+        } elif raw_digits.startswith("0") and len(raw_digits) == 10 {
+            local = raw_digits;
+        } elif len(raw_digits) == 9 and not raw_digits.startswith("0") {
+            local = "0" + raw_digits;
         }
         if local and local not in out {
             out.append(local);
@@ -116,12 +132,21 @@ def find_licence(text: str) -> str {
 
 def find_visa_word(text: str) -> str {
     low = text.lower();
-    for w in ["tourist visa", "visit visa", "employment visa", "work visa", "student visa"] {
+    for w in ["tourist visa", "visit visa", "employment visa", "work visa", "student visa", "arrival stamp", "entry permit", "tourist pass", "visit pass", "on-arrival", "on arrival", "entry visa"] {
         if w in low {
             return w;
         }
     }
     return "";
+}
+
+"""Sanitise PII (Sri Lankan NIC numbers and personal bank accounts) before saving to the shared graph."""
+def redact_pii(text: str) -> str {
+    s = text;
+    s = re.sub(r"\b\d{9}[vVxX]\b", "[REDACTED NIC]", s);
+    s = re.sub(r"\b(?:19|20)\d{10}\b", "[REDACTED NIC]", s);
+    s = re.sub(r"(?i)(?:account|acc|a/c)\s*(?:no\.?|number)?\s*[:\-]?\s*(\d{8,16})", "[REDACTED ACCOUNT]", s);
+    return s;
 }
 
 """Monthly salary in LKR using fixed approximate rates; -1 if the currency is unknown."""
