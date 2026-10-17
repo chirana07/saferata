@@ -363,7 +363,7 @@ walker:pub CheckContact {
         # 2. Check if flagged in any Agency impersonator list
         for a in [root -->[?:Agency]] {
             v = agency_view(a);
-            if phone in [normalise_phone(p) for p in v.impersonator_numbers]:
+            if phone in [normalise_phone(p) for p in v.impersonator_numbers] {
                 report ContactCheckResult(
                     value=phone,
                     status="flagged_impersonator",
