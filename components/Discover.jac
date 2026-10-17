@@ -1,6 +1,6 @@
 """Discover + job detail, ported from the layout-coder design (same Tailwind classes) and driven by the real backend."""
 
-import from "lucide-react" { Search, SlidersHorizontal, ArrowRight, ArrowLeft, X, Info, MessageSquare }
+import from "lucide-react" { Search, SlidersHorizontal, ArrowRight, ArrowLeft, X, Info, MessageSquare, Bookmark, Scale }
 import from jobboard { ListJobs, AddReview, MatchJobs, RespondToReview, RequestCorrection, JobView, JobMatch, PostResult, ReviewView, FindingView }
 import from agents { RecentChecks, CheckView, Step }
 import from .Profile { prof }
@@ -8,8 +8,34 @@ import from .ui { risk_of, SafetyIndicator, MatchMeter, VerifyBadge, CountryTag,
 
 glob SEL = "h-10 rounded-md border border-input bg-card px-3 text-sm font-medium focus:border-primary";
 
-def:pub NotBuilt(label: str) -> JsxElement {
-    return <span className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label + ": not built yet"}</span>;
+def get_saved -> list[str] {
+    try {
+        raw: str = localStorage.getItem("saferata.saved") or "";
+        return [x.strip() for x in raw.split(",") if x.strip()] if raw else [];
+    } except Exception {
+        return [];
+    }
+}
+
+def put_saved(ids: list[str]) {
+    try {
+        localStorage.setItem("saferata.saved", ",".join(ids));
+    } except Exception {}
+}
+
+def get_compare -> list[str] {
+    try {
+        raw: str = localStorage.getItem("saferata.compare") or "";
+        return [x.strip() for x in raw.split(",") if x.strip()] if raw else [];
+    } except Exception {
+        return [];
+    }
+}
+
+def put_compare(ids: list[str]) {
+    try {
+        localStorage.setItem("saferata.compare", ",".join(ids));
+    } except Exception {}
 }
 
 def match_pct(matches: list[JobMatch], job_id: str) -> int {
@@ -131,7 +157,31 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
         respond_text: str = "",
         correction: str = "",
         message: str = "",
-        last_steps: list[Step] = [];
+        last_steps: list[Step] = [],
+        saved_ids: list[str] = [],
+        compare_ids: list[str] = [],
+        show_compare: bool = False,
+        saved_only: bool = False;
+
+    def toggle_save(jid: str) {
+        if jid in saved_ids {
+            saved_ids = [x for x in saved_ids if x != jid];
+        } else {
+            saved_ids = saved_ids + [jid];
+        }
+        put_saved(saved_ids);
+    }
+
+    def toggle_compare(jid: str) {
+        if jid in compare_ids {
+            compare_ids = [x for x in compare_ids if x != jid];
+        } else {
+            if len(compare_ids) < 3 {
+                compare_ids = compare_ids + [jid];
+            }
+        }
+        put_compare(compare_ids);
+    }
 
     async def load -> None {
         loading = True;
@@ -211,6 +261,8 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
     }
 
     can with entry {
+        saved_ids = get_saved();
+        compare_ids = get_compare();
         load();
     }
 
@@ -219,7 +271,8 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
     expv = int(exp or "-1");
     results = [j for j in jobs if (not term or term in (j.title + " " + j.country + " " + j.occupation + " " + j.description).lower())
         and (not country or j.country == country) and (not occ or j.occupation == occ) and j.salary_lkr >= minv
-        and (expv < 0 or j.experience_years <= expv) and (not ctype or j.contract_type == ctype)];
+        and (expv < 0 or j.experience_years <= expv) and (not ctype or j.contract_type == ctype)
+        and (not saved_only or j.id in saved_ids)];
     if sort == "salary" {
         results = sorted(results, key=lambda (j: JobView) { -j.salary_lkr; });
     } elif sort == "recent" {
@@ -235,6 +288,7 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
     pct = profile_pct();
     variants = ["salary", "standard", "standard", "salary", "standard"];
     opened = [j for j in jobs if j.id == open_id];
+    comp_jobs = [j for j in jobs if j.id in compare_ids];
 
     if opened {
         jb = opened[0];
@@ -250,7 +304,12 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                     <p className="mt-4 text-sm text-muted-foreground"><span className="font-semibold text-foreground">{jb.agency_name}</span>{f" · SLBFE licence {jb.licence_no} · posted {jb.posted_at}"}</p>
                     <div className="mt-5 flex flex-wrap items-center gap-2">
                         <button onClick={lambda -> None { enquire = not enquire; }} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"><MessageSquare className="h-4 w-4"/> Enquire</button>
-                        <NotBuilt label="Save / compare"/>
+                        <button onClick={lambda -> None { toggle_save(jb.id); }} className={"inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition-colors " + ("border-primary bg-primary/10 text-primary font-bold" if jb.id in saved_ids else "border-border bg-card text-muted-foreground hover:text-foreground")}>
+                            <Bookmark className={"h-4 w-4 " + ("fill-primary" if jb.id in saved_ids else "")}/> {if jb.id in saved_ids { "Saved"; } else { "Save"; }}
+                        </button>
+                        <button onClick={lambda -> None { toggle_compare(jb.id); }} className={"inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition-colors " + ("border-primary bg-primary/10 text-primary font-bold" if jb.id in compare_ids else "border-border bg-card text-muted-foreground hover:text-foreground")}>
+                            <Scale className="h-4 w-4"/> {if jb.id in compare_ids { "Comparing"; } else { "Compare"; }}
+                        </button>
                     </div>
                     {if enquire {
                         <div className="mt-4 rounded-xl border border-border bg-card p-4 shadow-card rise-in">
@@ -413,6 +472,9 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                     <input value={q} onChange={lambda (e: ChangeEvent) { q = e.target.value; }} placeholder="Occupation, destination or keyword — try “driver” or “Qatar”" className="h-12 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground"/>
                 </label>
                 <div className="flex gap-2">
+                    <button onClick={lambda -> None { saved_only = not saved_only; }} className={"inline-flex h-12 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition-all md:flex-none " + ("border-primary bg-primary text-primary-foreground shadow-sm" if saved_only else "border-border bg-card text-muted-foreground hover:text-foreground")}>
+                        <Bookmark className={"h-4 w-4 " + ("fill-current" if saved_only else "")}/> Saved {if len(saved_ids) > 0 { <span className="rounded bg-primary-foreground/20 px-1.5 font-mono text-[11px]">{str(len(saved_ids))}</span> }}
+                    </button>
                     <button onClick={lambda -> None { show_filters = not show_filters; }} className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold md:flex-none">
                         <SlidersHorizontal className="h-4 w-4"/> Filters {if active > 0 { <span className="rounded bg-primary px-1.5 font-mono text-[11px] text-primary-foreground">{str(active)}</span> }}
                     </button>
@@ -486,5 +548,107 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                 </div>
             }}
         </section>
+
+        {if len(compare_ids) > 0 {
+            <aside className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full border border-primary/40 bg-card/95 px-5 py-3 shadow-lift backdrop-blur rise-in">
+                <span className="flex items-center gap-2 text-xs font-semibold">
+                    <Scale className="h-4 w-4 text-primary"/>
+                    <span>{f"{len(compare_ids)}/3 jobs in compare"}</span>
+                </span>
+                <button onClick={lambda -> None { show_compare = True; }} className="rounded-full bg-primary px-3.5 py-1 text-xs font-bold text-primary-foreground hover:bg-primary-deep">
+                    Compare now
+                </button>
+                <button onClick={lambda -> None { compare_ids = []; put_compare([]); }} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-3.5 w-3.5"/>
+                </button>
+            </aside>
+        }}
+
+        {if show_compare {
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+                <div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl rise-in">
+                    <div className="flex items-center justify-between border-b border-border pb-4">
+                        <div>
+                            <span className="eyebrow text-primary">Side-by-side analysis</span>
+                            <h2 className="mt-1 text-2xl font-bold">Compare Overseas Listings</h2>
+                        </div>
+                        <button onClick={lambda -> None { show_compare = False; }} className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground">
+                            <X className="h-5 w-5"/>
+                        </button>
+                    </div>
+                    {if len(comp_jobs) == 0 {
+                        <div className="py-12 text-center text-sm text-muted-foreground">
+                            No jobs selected for comparison yet. Open any job and click "Compare" to add it.
+                        </div>
+                    } else {
+                        <div className="mt-6 overflow-x-auto">
+                            <table className="w-full min-w-[600px] text-sm">
+                                <thead>
+                                    <tr className="border-b border-border">
+                                        <th className="w-44 pb-3 text-left eyebrow">Specification</th>
+                                        {[
+                                            <th key={cj.id} className="pb-3 text-left align-top">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <span className="font-bold text-foreground">{cj.title}</span>
+                                                        <p className="text-xs text-muted-foreground">{cj.country + " · " + cj.agency_name}</p>
+                                                    </div>
+                                                    <button onClick={lambda -> None { toggle_compare(cj.id); }} className="text-muted-foreground hover:text-risk">
+                                                        <X className="h-3.5 w-3.5"/>
+                                                    </button>
+                                                </div>
+                                            </th>
+                                            for cj in comp_jobs
+                                        ]}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Monthly Salary</td>
+                                        {[<td key={cj.id} className="py-3 font-mono font-semibold">{cj.salary} <span className="text-xs font-normal text-muted-foreground">{(f"· ≈ " + lkr(cj.salary_lkr)) if cj.salary_lkr > 0 else ""}</span></td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Est. Net Take-Home</td>
+                                        {[<td key={cj.id} className="py-3 font-mono font-semibold text-primary-deep">{lkr(cj.take_home_lkr) if cj.take_home_lkr > 0 else "Not enough data"}</td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Worker Recruitment Fee</td>
+                                        {[<td key={cj.id} className={"py-3 font-mono " + ("font-bold text-risk" if cj.worker_fee_lkr > 150000 else "")}>{lkr(cj.worker_fee_lkr) if cj.worker_fee_lkr > 0 else "None stated"}</td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Visa Category</td>
+                                        {[<td key={cj.id} className="py-3">{cj.contract_type or "Employment visa"}</td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Contract Duration</td>
+                                        {[<td key={cj.id} className="py-3">{(f"{cj.contract_months} months") if cj.contract_months else "Not stated"}</td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Accommodation</td>
+                                        {[<td key={cj.id} className="py-3">{cj.accommodation or "Not stated"}</td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Safety Assessment</td>
+                                        {[<td key={cj.id} className="py-3"><SafetyIndicator risk={risk_of(cj.band, cj.score)}/></td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Candidate Match</td>
+                                        {[<td key={cj.id} className="py-3">{if match_pct(matches, cj.id) >= 0 { <MatchMeter value={match_pct(matches, cj.id)}/>; } else { <span className="text-xs text-muted-foreground">Add profile</span>; }}</td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">SLBFE Licence</td>
+                                        {[<td key={cj.id} className="py-3 font-mono text-xs">{cj.licence_no} <VerifyBadge state="verified"/></td> for cj in comp_jobs]}
+                                    </tr>
+                                    <tr>
+                                        <td className="py-3 font-semibold text-muted-foreground">Action</td>
+                                        {[<td key={cj.id} className="py-3"><button onClick={lambda -> None { show_compare = False; open_job(cj.id); }} className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-deep">View listing →</button></td> for cj in comp_jobs]}
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    }}
+                </div>
+            </div>
+        }}
     </div>;
 }
