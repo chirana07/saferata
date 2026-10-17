@@ -69,6 +69,47 @@ def evidence_in_text(evidence: str, text: str) -> bool {
     return ev in _norm(text);
 }
 
+"""Pattern-based extraction used by the Supervisor to double-check the Extractor agent."""
+def find_phones(text: str) -> list[str] {
+    out: list[str] = [];
+    for m in re.findall(r"\+?\d[\d\s\-]{7,16}\d", text) {
+        raw: str = m;
+        digits = re.sub(r"\D", "", raw);
+        local = "";
+        if raw.strip().startswith("+94") and len(digits) == 11 {
+            local = "0" + digits[2:];
+        } elif digits.startswith("0") and len(digits) == 10 {
+            local = digits;
+        } elif raw.strip().startswith("+") and 9 <= len(digits) <= 13 {
+            local = "+" + digits;
+        }
+        if local and local not in out {
+            out.append(local);
+        }
+    }
+    return out;
+}
+
+def find_emails(text: str) -> list[str] {
+    found: list[str] = re.findall(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text);
+    return [e.lower() for e in found];
+}
+
+def find_licence(text: str) -> str {
+    hits: list[str] = re.findall(r"(?i)licen[cs]e\s*(?:no\.?|number|#)?\s*[:\-]?\s*(\d{3,5})", text);
+    return hits[0] if hits else "";
+}
+
+def find_visa_word(text: str) -> str {
+    low = text.lower();
+    for w in ["tourist visa", "visit visa", "employment visa", "work visa", "student visa"] {
+        if w in low {
+            return w;
+        }
+    }
+    return "";
+}
+
 """Critic: keep a flag only if its evidence is literally in the offer (register/community flags are exempt)."""
 def critic(flags: list[RedFlag], text: str) -> tuple[list[RedFlag], list[str]] {
     kept: list[RedFlag] = [];
@@ -144,6 +185,16 @@ test "dedupe drops agent flags repeating covered evidence" {
     soft = RedFlag(code="AGENT", title="Passport Confiscation", points=10, evidence="Sponsor will keep passport", explanation="", source=SRC_AGENT, agent="");
     other = RedFlag(code="AGENT", title="Pressure to pay", points=5, evidence="Only 5 seats left", explanation="", source=SRC_AGENT, agent="");
     assert len(dedupe([hard, soft, other])) == 2;
+}
+
+test "pattern extraction finds phones, licence and visa but not bank accounts" {
+    t = "Licence No 3500. Pay to account 8012345678. WhatsApp +94 76 555 1234 or 0112818268. Mail info@atcs.lk. Travel on tourist visa.";
+    assert find_phones(t) == ["0765551234", "0112818268"];
+    assert find_licence(t) == "3500";
+    assert find_emails(t) == ["info@atcs.lk"];
+    assert find_visa_word(t) == "tourist visa";
+    assert find_phones("Call +7 925 000 1122 now") == ["+79250001122"];
+    assert find_licence("no licence printed") == "";
 }
 
 test "scoring bands" {
