@@ -312,9 +312,129 @@ def agency_view(a: Agency) -> AgencyView {
         checked_at=a.checked_at, jobs=jobs, reports=reports, credible_fraud=fraud, warnings=warns, related_checks=related, impersonator_numbers=imp);
 }
 
+def ensure_seed_data(r: Root) {
+    if len([r -->[?:Job]]) > 0 {
+        return;
+    }
+    # Official Agency
+    ag = Agency(licence_no="3500", name="A T C GLOBAL HOLDINGS (PVT) LTD", phones=["0112818268", "0715217978", "0771605640"],
+        email="atcglobalholdings@gmail.com", valid_upto="2027-02-15", checked_at="2026-10-17 10:00");
+    r ++> ag;
+
+    for p in ["0112818268", "0715217978", "0771605640"] {
+        ct = Contact(value=p, kind="phone");
+        r ++> ct;
+    }
+
+    # Pre-screened Jobs
+    j1 = Job(title="Light vehicle driver", country="Qatar", salary="QAR 2,000 + accommodation",
+        description="Employment visa sponsored by the employer. 2-year contract signed in Colombo before departure. Accommodation and transport provided. Any agency charges are paid only at our Nugegoda office against an official receipt, after you sign the contract.",
+        licence_no="3500", agency_name="A T C GLOBAL HOLDINGS (PVT) LTD", contact_phone="0112818268", posted_at="2026-10-17 09:30",
+        band="LOOKS SAFE", score=0, base_score=0,
+        summary="Standard sponsored employment visa under Qatar labour law. Written contract signed prior to departure with official receipts issued exclusively at agency office.",
+        top_flags=[], warnings=["Impersonation alert: Kasun reported unauthorized recruiter from 0789123456 demanding registration fees."],
+        occupation="driver", experience_years=2, contract_type="employment", contract_months=24, accommodation="provided",
+        deductions="none", monthly_deductions=0.0, worker_fee_lkr=0.0);
+    r ++> j1;
+    ag ++> j1;
+
+    j2 = Job(title="Hotel housekeeping attendant", country="United Arab Emirates", salary="AED 1,600",
+        description="Employment visa (work permit) issued by the hotel. 2-year renewable contract. Shared staff accommodation and meals. SLBFE registration done before departure; no fee is collected before the contract is signed.",
+        licence_no="3500", agency_name="A T C GLOBAL HOLDINGS (PVT) LTD", contact_phone="0715217978", posted_at="2026-10-17 08:45",
+        band="LOOKS SAFE", score=0, base_score=0,
+        summary="Hospitality sector employment with full group accommodation and medical insurance included under UAE labour law.",
+        top_flags=[], warnings=[],
+        occupation="housekeeping", experience_years=1, contract_type="employment", contract_months=24, accommodation="provided",
+        deductions="none", monthly_deductions=0.0, worker_fee_lkr=0.0);
+    r ++> j2;
+    ag ++> j2;
+
+    j3 = Job(title="Commis chef", country="Saudi Arabia", salary="SAR 2,400",
+        description="Employment visa sponsored by the employer. NVQ Level 3 cookery preferred. 2-year contract, accommodation provided, 30 days annual leave. Contract and fees explained at our office with an official receipt for every payment.",
+        licence_no="3500", agency_name="A T C GLOBAL HOLDINGS (PVT) LTD", contact_phone="0771605640", posted_at="2026-10-17 07:15",
+        band="LOOKS SAFE", score=0, base_score=0,
+        summary="Verified restaurant group sponsorship with verified employer contract in Saudi Arabia.",
+        top_flags=[], warnings=[],
+        occupation="chef", experience_years=2, contract_type="employment", contract_months=24, accommodation="provided",
+        deductions="none", monthly_deductions=0.0, worker_fee_lkr=0.0);
+    r ++> j3;
+    ag ++> j3;
+
+    j4 = Job(title="MIG Welder / Fabricator", country="Kuwait", salary="KWD 180 + food allowance",
+        description="Industrial steel construction project in Kuwait. Direct work visa issued by contractor. 2-year contract, medical cover, overtime paid at 1.5x. SLBFE pre-departure registration mandatory.",
+        licence_no="3500", agency_name="A T C GLOBAL HOLDINGS (PVT) LTD", contact_phone="0112818268", posted_at="2026-10-17 06:00",
+        band="LOOKS SAFE", score=0, base_score=0,
+        summary="Industrial fabrication work visa with overtime provisions and mandatory SLBFE clearance.",
+        top_flags=[], warnings=[],
+        occupation="welder", experience_years=3, contract_type="employment", contract_months=24, accommodation="provided",
+        deductions="none", monthly_deductions=0.0, worker_fee_lkr=0.0);
+    r ++> j4;
+    ag ++> j4;
+
+    # Worker reviews & impersonation reports
+    scam_ct = Contact(value="0789123456", kind="phone");
+    r ++> scam_ct;
+
+    rv1 = Review(author="Kasun", kind="fraud",
+        text="On 8 Oct 2026 a man called from 0789123456 saying he recruits Qatar drivers for this agency. He took Rs. 75,000 by bank transfer as a 'registration fee' and stopped answering. When I visited the Nugegoda office they said he is not their staff and they never charge before the contract.",
+        evidence="Bank transfer 08-10-2026, Rs. 75,000 to an individual's account; WhatsApp from 0789123456: 'pay today to reserve your Qatar driver seat'",
+        credibility=90, status="credible",
+        reason="Credible impersonation report backed by bank transaction and WhatsApp evidence.",
+        impersonation=True,
+        agency_response="Confirmed: 0789123456 is not affiliated with ATC Global. We never collect fees outside our Nugegoda office.",
+        created_at="2026-10-17 10:15");
+    j1 ++> rv1;
+    rv1 ++> scam_ct;
+
+    rv2 = Review(author="Dilani", kind="positive",
+        text="Placed as housekeeping attendant in Dubai in March 2026. The contract I received on arrival was identical to the one I signed in Colombo, and the only fee was paid at the office with a receipt.",
+        evidence="Official receipt from the agency office; signed contract copy dated 02-03-2026",
+        credibility=95, status="credible",
+        reason="Verified review with official SLBFE-aligned receipt.",
+        impersonation=False, agency_response="", created_at="2026-10-17 10:30");
+    j2 ++> rv2;
+
+    # Community scam checks (Offers)
+    off1 = Offer(
+        text="URGENT HIRING!!! IT / Data Entry jobs in THAILAND. Salary USD 1500 per month. Travel on tourist visa, pay Rs. 150,000 processing fee to confirm seat. Deposit to Commercial Bank account. WhatsApp +94 76 555 1234",
+        job="IT / Data Entry", country="Thailand", agency_name="Unregistered Online Recruiter", verdict="DANGER", score=85,
+        summary="Tourist visa scam for cyber scam compound / trafficking risk. Advance fee demanded.", created_at="2026-10-17 11:00");
+    r ++> off1;
+    thai_ct = Contact(value="0765551234", kind="phone");
+    r ++> thai_ct;
+    off1 ++> thai_ct;
+
+    off2 = Offer(
+        text="Housemaid job in Dubai, salary AED 1500. Go on 3-month visit visa first. Sponsor will keep passport for safety. Contact Mrs. Silva 0712223344, pay Rs. 60,000 for ticket.",
+        job="Housemaid", country="UAE", agency_name="Individual Broker (Mrs. Silva)", verdict="DANGER", score=90,
+        summary="Visit visa employment trap and illegal withholding of passport. High risk of exploitation.", created_at="2026-10-17 11:30");
+    r ++> off2;
+    dubai_ct = Contact(value="0712223344", kind="phone");
+    r ++> dubai_ct;
+    off2 ++> dubai_ct;
+
+    off3 = Offer(
+        text="Security guard / helper jobs in RUSSIA. Salary USD 2500. Tourist visa provided. Leave within 1 week. Contact WhatsApp +7 925 000 1122",
+        job="Security Guard", country="Russia", agency_name="Unknown Telegram Channel", verdict="DANGER", score=80,
+        summary="High-risk recruitment to conflict zone on tourist visa without SLBFE clearance.", created_at="2026-10-17 12:00");
+    r ++> off3;
+    rus_ct = Contact(value="79250001122", kind="phone");
+    r ++> rus_ct;
+    off3 ++> rus_ct;
+
+    off4 = Offer(
+        text="A T C GLOBAL HOLDINGS (PVT) LTD - Licence No 3500. Qatar House Driver. Registration fee Rs. 75,000 must be paid before interview. WhatsApp 0789 123 456",
+        job="House Driver", country="Qatar", agency_name="A T C GLOBAL HOLDINGS (PVT) LTD", verdict="DANGER", score=75,
+        summary="Impersonation scam using legitimate agency licence 3500 to extort upfront registration fee.", created_at="2026-10-17 12:30");
+    r ++> off4;
+    off4 ++> ag;
+    off4 ++> scam_ct;
+}
+
 """Companies screen: every agency the system has verified on the SLBFE register, with its jobs and worker reports."""
 walker:pub ListAgencies {
     can list with Root entry {
+        ensure_seed_data(root);
         for a in [root -->[?:Agency]] {
             report agency_view(a);
         }
@@ -337,6 +457,7 @@ walker:pub CheckContact {
     has value: str;
 
     can check with Root entry {
+        ensure_seed_data(root);
         raw = self.value.strip();
         phone = normalise_phone(raw) if re.search(r"\d{9}", re.sub(r"\D", "", raw)) else raw.lower().strip();
         if not phone {
@@ -419,6 +540,7 @@ walker:pub MatchJobs {
         needs_accommodation: bool = False;
 
     can rank with Root entry {
+        ensure_seed_data(root);
         for j in [root -->[?:Job]] {
             v = job_view(j);
             (m, why, warn) = match_job(self.occupation, self.skills, self.destinations, self.min_salary_lkr, self.experience_years, self.needs_accommodation,
@@ -433,6 +555,7 @@ walker:pub MatchJobs {
 
 walker:pub ListJobs {
     can list with Root entry {
+        ensure_seed_data(root);
         jobs = [j for j in [root -->[?:Job]]];
         jobs.reverse();
         for j in jobs {

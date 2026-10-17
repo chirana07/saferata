@@ -874,10 +874,52 @@ obj CheckView {
         alerts: list[str];
 }
 
+def ensure_sample_offers(r: Root) {
+    if len([r -->[?:Offer]]) > 0 {
+        return;
+    }
+    off1 = Offer(
+        text="URGENT HIRING!!! IT / Data Entry jobs in THAILAND. Salary USD 1500 per month. Travel on tourist visa, pay Rs. 150,000 processing fee to confirm seat. Deposit to Commercial Bank account. WhatsApp +94 76 555 1234",
+        job="IT / Data Entry", country="Thailand", agency_name="Unregistered Online Recruiter", verdict="DANGER", score=85,
+        summary="Tourist visa scam for cyber scam compound / trafficking risk. Advance fee demanded.", created_at="2026-10-17 11:00");
+    r ++> off1;
+    ct1 = Contact(value="0765551234", kind="phone");
+    r ++> ct1;
+    off1 ++> ct1;
+
+    off2 = Offer(
+        text="Housemaid job in Dubai, salary AED 1500. Go on 3-month visit visa first. Sponsor will keep passport for safety. Contact Mrs. Silva 0712223344, pay Rs. 60,000 for ticket.",
+        job="Housemaid", country="UAE", agency_name="Individual Broker (Mrs. Silva)", verdict="DANGER", score=90,
+        summary="Visit visa employment trap and illegal withholding of passport. High risk of exploitation.", created_at="2026-10-17 11:30");
+    r ++> off2;
+    ct2 = Contact(value="0712223344", kind="phone");
+    r ++> ct2;
+    off2 ++> ct2;
+
+    off3 = Offer(
+        text="Security guard / helper jobs in RUSSIA. Salary USD 2500. Tourist visa provided. Leave within 1 week. Contact WhatsApp +7 925 000 1122",
+        job="Security Guard", country="Russia", agency_name="Unknown Telegram Channel", verdict="DANGER", score=80,
+        summary="High-risk recruitment to conflict zone on tourist visa without SLBFE clearance.", created_at="2026-10-17 12:00");
+    r ++> off3;
+    ct3 = Contact(value="79250001122", kind="phone");
+    r ++> ct3;
+    off3 ++> ct3;
+
+    off4 = Offer(
+        text="A T C GLOBAL HOLDINGS (PVT) LTD - Licence No 3500. Qatar House Driver. Registration fee Rs. 75,000 must be paid before interview. WhatsApp 0789 123 456",
+        job="House Driver", country="Qatar", agency_name="A T C GLOBAL HOLDINGS (PVT) LTD", verdict="DANGER", score=75,
+        summary="Impersonation scam using legitimate agency licence 3500 to extort upfront registration fee.", created_at="2026-10-17 12:30");
+    r ++> off4;
+    ct4 = Contact(value="0789123456", kind="phone");
+    r ++> ct4;
+    off4 ++> ct4;
+}
+
 walker:pub RecentChecks {
     has limit: int = 10;
 
     can list with Root entry {
+        ensure_sample_offers(root);
         offers = [root -->[?:Offer]];
         offers = offers[-self.limit:];
         offers.reverse();
