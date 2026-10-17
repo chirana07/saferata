@@ -85,7 +85,7 @@ def:pub app -> JsxElement {
     async def investigate -> None;
     async def submit_answers -> None;
 
-    <div style={{"maxWidth": "980px", "margin": "0 auto", "padding": "24px 16px", "fontFamily": "system-ui, -apple-system, Segoe UI, sans-serif", "color": "#1b2631"}}>
+    return <div style={{"maxWidth": "980px", "margin": "0 auto", "padding": "24px 16px", "fontFamily": "system-ui, -apple-system, Segoe UI, sans-serif", "color": "#1b2631"}}>
         <header style={{"background": "#0b2545", "color": "white", "borderRadius": "16px", "padding": "22px 24px"}}>
             <div style={{"display": "flex", "alignItems": "baseline", "gap": "12px", "flexWrap": "wrap"}}>
                 <h1 style={{"margin": "0", "fontSize": "32px", "letterSpacing": "-0.5px"}}>SafeRata</h1>
@@ -261,5 +261,5 @@ def:pub app -> JsxElement {
         {if tab == "check" {
             <CommunityFeed refresh={refresh}/>
         }}
-    </div>
+    </div>;
 }

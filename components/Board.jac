@@ -1,6 +1,6 @@
 """Job board UI: licensed agencies post jobs (auto-analysed), workers add evidence-backed reviews."""
 
-import from board { PostJob, ListJobs, AddReview, JobView, PostResult, ReviewView }
+import from jobboard { PostJob, ListJobs, AddReview, JobView, PostResult, ReviewView }
 import from agents { Step }
 
 def chip_color(band: str) -> str {
@@ -86,7 +86,7 @@ def:pub JobBoard -> JsxElement {
         load();
     }
 
-    <div>
+    return <div>
         <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "flexWrap": "wrap", "gap": "8px"}}>
             <p style={{"color": "#566573", "margin": "0"}}>Only agencies on the live SLBFE register can post. Every posting is investigated by the agent team, and workers can report fraud with evidence.</p>
             <button onClick={lambda -> None { show_form = not show_form; }}
@@ -181,5 +181,5 @@ def:pub JobBoard -> JsxElement {
             </div>
             for j in jobs
         ]}
-    </div>
+    </div>;
 }

@@ -8,6 +8,8 @@ import re;
 import html;
 import urllib.request;
 import urllib.parse;
+import os;
+import ssl;
 import from datetime { datetime }
 
 glob SLBFE_URL = "https://applications.slbfe.lk/feb/la/la_details.asp";
@@ -47,8 +49,9 @@ def _clean(s: str) -> str {
 }
 
 def _field(chunk: str, label: str, stop: str) -> str {
-    m = re.search(label + r"\s*:?\s*(.*?)\s*" + stop, chunk, re.S);
-    return _clean(m.group(1)) if m else "";
+    pattern: str = "(?s)" + label + "\\s*:?\\s*(.*?)\\s*" + stop;
+    hits: list[str] = re.findall(pattern, chunk);
+    return _clean(hits[0]) if hits else "";
 }
 
 """Turn the register's HTML page into agency records."""
@@ -61,7 +64,7 @@ def parse_register(page: str) -> list[AgencyRecord] {
     parts = re.split(r"\(Labour\s+Licence No :", flat);
     for i in range(1, len(parts)) {
         before = parts[i - 1].strip().split("\n");
-        name = before[-1].strip() if before else "";
+        name: str = str(before[-1]).strip() if before else "";
         chunk = parts[i];
         num = re.match(r"\s*(\d+)", chunk);
         if not num {
@@ -85,14 +88,29 @@ def parse_register(page: str) -> list[AgencyRecord] {
     return records;
 }
 
+"""HTTPS context: certifi's bundle if installed, else the OS bundle (some jac runtimes ship no CA certs)."""
+def _ssl_context -> ssl.SSLContext {
+    paths: list[str] = ["/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"];
+    try {
+        import certifi;
+        paths.insert(0, str(certifi.where()));
+    } except Exception {}
+    for p in paths {
+        if os.path.exists(p) {
+            return ssl.create_default_context(cafile=p);
+        }
+    }
+    return ssl.create_default_context();
+}
+
 def _post(form: dict[str, str]) -> RegisterResult {
     now = datetime.now().strftime("%Y-%m-%d %H:%M");
     try {
         data = urllib.parse.urlencode(form).encode();
         req = urllib.request.Request(SLBFE_URL, data=data, headers={"User-Agent": "SafeRata/0.1 (hackathon demo)"});
-        with urllib.request.urlopen(req, timeout=15) as resp {
-            page = resp.read().decode("latin-1");
-        }
+        resp = urllib.request.urlopen(req, timeout=15, context=_ssl_context());
+        page: str = resp.read().decode("latin-1");
+        resp.close();
         return RegisterResult(ok=True, records=parse_register(page), checked_at=now);
     } except Exception as e {
         return RegisterResult(ok=False, error=str(e), checked_at=now);

@@ -3,7 +3,6 @@
 The LLM never decides licence status or points. Code does.
 """
 import re;
-import from graph { OfferFacts, SoftFlag, Severity }
 
 obj RedFlag {
     has code: str,
@@ -68,90 +67,6 @@ def evidence_in_text(evidence: str, text: str) -> bool {
         return False;
     }
     return ev in _norm(text);
-}
-
-"""Hard flags that come from official rules applied to the extracted facts."""
-def rule_flags(facts: OfferFacts) -> list[RedFlag] {
-    flags: list[RedFlag] = [];
-    visa = facts.visa_type.lower();
-    if "visit" in visa or "tourist" in visa {
-        flags.append(
-            RedFlag(
-                code="VISIT_VISA",
-                title="Job offered on a visit/tourist visa",
-                points=30,
-                evidence=facts.visa_evidence or facts.visa_type,
-                explanation="You cannot legally work on a visit or tourist visa. You will have no labour rights, no SLBFE insurance, and can be arrested or stranded.",
-                source=SRC_GUIDANCE,
-                agent="Rules engine"
-            )
-        );
-    }
-    if facts.payment_to_personal_account {
-        flags.append(
-            RedFlag(
-                code="PERSONAL_ACCOUNT",
-                title="Payment to a personal account",
-                points=25,
-                evidence=facts.payment_evidence,
-                explanation="Licensed agencies issue official receipts from a company account. Paying an individual leaves you with no proof and no way to recover your money.",
-                source=SRC_GUIDANCE,
-                agent="Rules engine"
-            )
-        );
-    }
-    if facts.pay_before_contract {
-        flags.append(
-            RedFlag(
-                code="PAY_BEFORE_CONTRACT",
-                title="Money demanded before a contract",
-                points=25,
-                evidence=facts.pay_before_contract_evidence,
-                explanation="SLBFE advises never to pay before you have verified the agency and seen a written job offer/contract.",
-                source=SRC_GUIDANCE,
-                agent="Rules engine"
-            )
-        );
-    }
-    if facts.passport_retained {
-        flags.append(
-            RedFlag(
-                code="PASSPORT",
-                title="Employer or agent keeps your passport",
-                points=25,
-                evidence=facts.passport_evidence,
-                explanation="Holding a worker's passport is a common sign of forced labour. Your passport must stay with you.",
-                source=SRC_GUIDANCE,
-                agent="Rules engine"
-            )
-        );
-    }
-    return flags;
-}
-
-def severity_points(sev: Severity) -> int {
-    if sev == Severity.CRITICAL {
-        return 10;
-    }
-    if sev == Severity.HIGH {
-        return 8;
-    }
-    if sev == Severity.MEDIUM {
-        return 5;
-    }
-    return 3;
-}
-
-def soft_to_red(s: SoftFlag, agent: str) -> RedFlag {
-    return RedFlag(
-        code="AGENT",
-        title=s.title,
-        points=severity_points(s.severity),
-        evidence=s.evidence,
-        explanation=s.explanation,
-        source=SRC_AGENT,
-        agent=agent
-    );
 }
 
 """Critic: keep a flag only if its evidence is literally in the offer (register/community flags are exempt)."""

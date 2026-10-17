@@ -24,7 +24,7 @@ def:pub CommunityFeed(refresh: int) -> JsxElement {
         load();
     }
 
-    <div style={{"marginTop": "28px"}}>
+    return <div style={{"marginTop": "28px"}}>
         <h2 style={{"marginBottom": "6px"}}>Community checks</h2>
         <p style={{"color": "#566573", "marginTop": "0", "fontSize": "14px"}}>Every check feeds a shared graph. When a phone number later turns up in a dangerous offer, the Network Guardian warns everyone who checked an offer with it.</p>
         {if len(checks) == 0 {
@@ -41,5 +41,5 @@ def:pub CommunityFeed(refresh: int) -> JsxElement {
             </div>
             for c in checks
         ]}
-    </div>
+    </div>;
 }

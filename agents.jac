@@ -6,16 +6,189 @@ import re;
 import from concurrent.futures { ThreadPoolExecutor }
 import from datetime { datetime }
 import from models { llm }
-import from graph {
-    Agency, Contact, Offer, Alert,
-    OfferFacts, SoftFlag, Specialist, InvestigationNotes, JudgeRuling, Advice
-}
+import from graph { Agency, Contact, Offer, Alert }
 import from rules {
     RedFlag, Score, RegisterStatus,
-    SRC_REGISTER, SRC_COMMUNITY, SRC_GUIDANCE, GENERAL_GUIDANCE,
-    country_note, rule_flags, soft_to_red, critic, dedupe, score_flags
+    SRC_REGISTER, SRC_AGENT, SRC_COMMUNITY, SRC_GUIDANCE, GENERAL_GUIDANCE,
+    country_note, critic, dedupe, score_flags
 }
 import from slbfe { AgencyRecord, RegisterResult, search_by_licence, search_by_name, normalise_phone }
+
+# ---------- objects the agents fill in (LLM schemas) ----------
+# jac 0.34: by-llm return types must live in the same module as the by-llm functions.
+
+obj Fee {
+    has label: str,
+        amount: float,
+        currency: str,
+        evidence: str;
+}
+
+obj OfferFacts {
+    has job_title: str = "",
+        country: str = "",
+        salary_amount: float = 0.0,
+        salary_currency: str = "",
+        agency_name: str = "",
+        licence_no: str = "",
+        visa_type: str = "",
+        phones: list[str] = [],
+        emails: list[str] = [],
+        fees: list[Fee] = [],
+        payment_to_personal_account: bool = False,
+        payment_evidence: str = "",
+        pay_before_contract: bool = False,
+        pay_before_contract_evidence: str = "",
+        passport_retained: bool = False,
+        passport_evidence: str = "",
+        visa_evidence: str = "";
+}
+
+sem OfferFacts.job_title = "Job title offered, e.g. 'House driver', 'Data entry', 'Caregiver'.";
+sem OfferFacts.country = "Destination country in English, e.g. 'Qatar', 'Thailand'. Empty if not stated.";
+sem OfferFacts.salary_amount = "Monthly salary number as stated (0 if not stated).";
+sem OfferFacts.salary_currency = "Currency code of the salary, e.g. USD, QAR, AED, SAR, LKR.";
+sem OfferFacts.agency_name = "Name of the Sri Lankan recruitment agency named in the offer, empty if none.";
+sem OfferFacts.licence_no = "SLBFE licence number if the offer prints one (digits only), else empty.";
+sem OfferFacts.visa_type = "Visa type stated: 'work', 'employment', 'visit', 'tourist', 'student', or empty if not stated.";
+sem OfferFacts.phones = "All phone / WhatsApp numbers in the offer, as written.";
+sem OfferFacts.emails = "All email addresses in the offer.";
+sem OfferFacts.fees = "Every amount the WORKER is asked to pay (registration, processing, visa, medical, ticket...).";
+sem OfferFacts.payment_to_personal_account = "True if the worker is told to pay into a personal bank account, eZ Cash, or to an individual rather than the agency's company account.";
+sem OfferFacts.pay_before_contract = "True if money is demanded before the worker receives/signs a written employment contract or before visa approval.";
+sem OfferFacts.passport_retained = "True if the employer/agency will keep the worker's passport.";
+sem Fee.evidence = "Exact quote from the offer showing this fee.";
+
+enum Severity { CRITICAL, HIGH, MEDIUM, LOW }
+
+obj SoftFlag {
+    has title: str,
+        evidence: str,
+        explanation: str,
+        severity: Severity;
+}
+
+sem SoftFlag.title = "Short name of the warning sign, e.g. 'Pressure to pay quickly'.";
+sem SoftFlag.evidence = "EXACT words copied from the offer that show the problem (verbatim quote, max ~20 words). Never paraphrase.";
+sem SoftFlag.explanation = "One or two plain-language sentences for a worker with basic English: why this is risky.";
+
+enum Specialist { TRAFFICKING, CONTRACT, FEES }
+
+sem Specialist.TRAFFICKING = "Human trafficking / scam-compound / war recruitment patterns (e.g. IT or data-entry jobs in Thailand/Myanmar/Cambodia/Laos, tourist visa, flights paid, Russia army jobs).";
+sem Specialist.CONTRACT = "Contract and working-condition clauses (passport retention, hours, deductions, job mismatch, salary vagueness).";
+sem Specialist.FEES = "Money: fees, payment method, payment timing, unrealistic salary.";
+
+obj InvestigationNotes {
+    has summary: str,
+        specialists: list[Specialist];
+}
+
+sem InvestigationNotes.summary = "Investigator's findings so far in 3-6 short sentences, citing the tool results (register, contacts, community, country guidance).";
+sem InvestigationNotes.specialists = "Which expert reviewers should examine this offer next. Pick only the relevant ones (1-3).";
+
+obj JudgeRuling {
+    has summary: str,
+        dismissed: list[int];
+}
+
+sem JudgeRuling.summary = "Two or three sentences: the judge's overall conclusion after hearing both sides.";
+sem JudgeRuling.dismissed = "Numbers of the candidate warning signs that the defence successfully rebutted and should be dropped. Empty if all stand.";
+
+obj Advice {
+    has questions_to_ask: list[str],
+        next_steps: list[str],
+        report_draft: str;
+}
+
+sem Advice.questions_to_ask = "3-5 specific questions the worker should ask the agency before paying anything.";
+sem Advice.next_steps = "3-5 concrete actions, e.g. verify licence on slbfe.lk, call the SLBFE 1989 hotline, never hand over passport, insist on receipts.";
+sem Advice.report_draft = "A short complaint the worker can send to the SLBFE (1989 hotline / slbfe.lk) describing the offer and its red flags. Empty if the offer looks safe.";
+
+# ---------- official-rule flags over the extracted facts ----------
+
+"""Hard flags that come from official rules applied to the extracted facts."""
+def rule_flags(facts: OfferFacts) -> list[RedFlag] {
+    flags: list[RedFlag] = [];
+    visa = facts.visa_type.lower();
+    if "visit" in visa or "tourist" in visa {
+        flags.append(
+            RedFlag(
+                code="VISIT_VISA",
+                title="Job offered on a visit/tourist visa",
+                points=30,
+                evidence=facts.visa_evidence or facts.visa_type,
+                explanation="You cannot legally work on a visit or tourist visa. You will have no labour rights, no SLBFE insurance, and can be arrested or stranded.",
+                source=SRC_GUIDANCE,
+                agent="Rules engine"
+            )
+        );
+    }
+    if facts.payment_to_personal_account {
+        flags.append(
+            RedFlag(
+                code="PERSONAL_ACCOUNT",
+                title="Payment to a personal account",
+                points=25,
+                evidence=facts.payment_evidence,
+                explanation="Licensed agencies issue official receipts from a company account. Paying an individual leaves you with no proof and no way to recover your money.",
+                source=SRC_GUIDANCE,
+                agent="Rules engine"
+            )
+        );
+    }
+    if facts.pay_before_contract {
+        flags.append(
+            RedFlag(
+                code="PAY_BEFORE_CONTRACT",
+                title="Money demanded before a contract",
+                points=25,
+                evidence=facts.pay_before_contract_evidence,
+                explanation="SLBFE advises never to pay before you have verified the agency and seen a written job offer/contract.",
+                source=SRC_GUIDANCE,
+                agent="Rules engine"
+            )
+        );
+    }
+    if facts.passport_retained {
+        flags.append(
+            RedFlag(
+                code="PASSPORT",
+                title="Employer or agent keeps your passport",
+                points=25,
+                evidence=facts.passport_evidence,
+                explanation="Holding a worker's passport is a common sign of forced labour. Your passport must stay with you.",
+                source=SRC_GUIDANCE,
+                agent="Rules engine"
+            )
+        );
+    }
+    return flags;
+}
+
+def severity_points(sev: Severity) -> int {
+    if sev == Severity.CRITICAL {
+        return 10;
+    }
+    if sev == Severity.HIGH {
+        return 8;
+    }
+    if sev == Severity.MEDIUM {
+        return 5;
+    }
+    return 3;
+}
+
+def soft_to_red(s: SoftFlag, agent: str) -> RedFlag {
+    return RedFlag(
+        code="AGENT",
+        title=s.title,
+        points=severity_points(s.severity),
+        evidence=s.evidence,
+        explanation=s.explanation,
+        source=SRC_AGENT,
+        agent=agent
+    );
+}
 
 obj Step {
     has agent: str,
@@ -55,7 +228,7 @@ obj CaseReport {
 # ---------------- LLM agents (plain functions) ----------------
 
 def extract_facts(offer: str) -> OfferFacts by llm(temperature=0.0);
-sem extract_facts = "You are the Extractor agent. Read a foreign job offer (Facebook ad, WhatsApp message or contract) aimed at Sri Lankan workers and extract the facts. Do not invent anything that is not in the text.";
+sem extract_facts = "You are the Extractor agent. Read a foreign job offer (Facebook ad, WhatsApp message or contract) aimed at Sri Lankan workers and extract the facts. Do not invent anything that is not in the text. Copy every evidence string VERBATIM from the offer text (a short exact quote), or leave it empty.";
 sem extract_facts.offer = "The raw job offer text.";
 
 def specialist_review(role: Specialist, offer: str, facts: OfferFacts, notes: str) -> list[SoftFlag] by llm(temperature=0.2);
@@ -215,8 +388,10 @@ walker:pub Investigate {
             return "No verified agency to compare against. Look up the agency first.";
         }
         ag = self.agency;
-        offer_phones = [normalise_phone(p) for p in self.facts.phones if normalise_phone(p)];
-        offer_emails = [e.lower().strip() for e in self.facts.emails];
+        fphones: list[str] = self.facts.phones;
+        femails: list[str] = self.facts.emails;
+        offer_phones = [normalise_phone(p) for p in fphones if normalise_phone(p)];
+        offer_emails = [e.lower().strip() for e in femails];
         foreign_phones = [p for p in offer_phones if p not in ag.phones];
         foreign_emails = [e for e in offer_emails if e != ag.email];
         if not foreign_phones and not foreign_emails {
@@ -367,8 +542,10 @@ walker:pub Investigate {
         if self.agency is not None {
             official = self.agency.phones + [self.agency.email];
         }
-        values = [(normalise_phone(p), "phone") for p in f.phones if normalise_phone(p) and normalise_phone(p) not in official]
-            + [(e.lower().strip(), "email") for e in f.emails if e.strip() and e.lower().strip() not in official];
+        fphones: list[str] = f.phones;
+        femails: list[str] = f.emails;
+        values: list[tuple[str, str]] = [(normalise_phone(p), "phone") for p in fphones if normalise_phone(p) and normalise_phone(p) not in official]
+            + [(e.lower().strip(), "email") for e in femails if e.strip() and e.lower().strip() not in official];
         alerts = 0;
         for (v, kind) in values {
             found = [c for c in [root -->[?:Contact]] if c.value == v];
