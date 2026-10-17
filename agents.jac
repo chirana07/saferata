@@ -10,7 +10,9 @@ import from graph { Agency, Contact, Offer, Alert }
 import from rules {
     RedFlag, Score, RegisterStatus,
     SRC_REGISTER, SRC_AGENT, SRC_COMMUNITY, SRC_GUIDANCE, GENERAL_GUIDANCE,
-    country_note, critic, dedupe, score_flags
+    country_note, critic, dedupe, score_flags,
+    find_phones, find_emails, find_licence, find_visa_word,
+    SRC_SALARY, to_lkr, salary_flag
 }
 import from slbfe { AgencyRecord, RegisterResult, search_by_licence, search_by_name, normalise_phone }
 
@@ -292,6 +294,10 @@ def _norm_text(s: str) -> str {
     return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip();
 }
 
+def _record_from_node(a: Agency) -> AgencyRecord {
+    return AgencyRecord(licence_no=a.licence_no, name=a.name, phones=a.phones, email=a.email, valid_upto=a.valid_upto);
+}
+
 def _agency_summary(a: AgencyRecord) -> str {
     return f"{a.name} (licence {a.licence_no}, valid until {a.valid_upto}); registered phones: {', '.join(a.phones) or 'none'}; email: {a.email or 'none'}";
 }
@@ -337,9 +343,16 @@ walker:pub Investigate {
         r = search_by_licence(licence_no);
         self.register_checked_at = r.checked_at;
         if not r.ok {
-            self.register_status = RegisterStatus.UNREACHABLE;
-            self.log("Lead Investigator", "lookup_licence", f"#{licence_no}: register unreachable");
-            return "The SLBFE register could not be reached. Licence status is UNKNOWN; tell the person to call 1989.";
+            digits = re.sub(r"\D", "", licence_no);
+            cached = [a for a in [root -->[?:Agency]] if a.licence_no == digits];
+            if not cached {
+                self.register_status = RegisterStatus.UNREACHABLE;
+                self.log("Lead Investigator", "lookup_licence", f"#{licence_no}: register unreachable and no cached copy");
+                return "The SLBFE register could not be reached. Licence status is UNKNOWN; tell the person to call 1989.";
+            }
+            r.records = [_record_from_node(cached[0])];
+            self.register_checked_at = f"cached copy from {cached[0].checked_at} (live register unreachable)";
+            self.log("Lead Investigator", "lookup_licence", f"#{licence_no}: live register unreachable; using cached register copy from {cached[0].checked_at}");
         }
         if not r.records {
             self.register_status = RegisterStatus.NOT_FOUND;
@@ -364,9 +377,15 @@ walker:pub Investigate {
         r = search_by_name(_search_word(name));
         self.register_checked_at = r.checked_at;
         if not r.ok {
-            self.register_status = RegisterStatus.UNREACHABLE;
-            self.log("Lead Investigator", "lookup_agency_name", f"'{name}': register unreachable");
-            return "The SLBFE register could not be reached. Licence status is UNKNOWN.";
+            cached = [a for a in [root -->[?:Agency]] if _names_match(name, a.name)];
+            if not cached {
+                self.register_status = RegisterStatus.UNREACHABLE;
+                self.log("Lead Investigator", "lookup_agency_name", f"'{name}': register unreachable and no cached copy");
+                return "The SLBFE register could not be reached. Licence status is UNKNOWN.";
+            }
+            r.records = [_record_from_node(a) for a in cached];
+            self.register_checked_at = f"cached copy from {cached[0].checked_at} (live register unreachable)";
+            self.log("Lead Investigator", "lookup_agency_name", f"'{name}': live register unreachable; using cached register copy from {cached[0].checked_at}");
         }
         hits = [a for a in r.records if _names_match(name, a.name)];
         if not hits {
@@ -438,6 +457,16 @@ walker:pub Investigate {
         return note;
     }
 
+    def salary_in_lkr(amount: float, currency: str) -> str {
+        lkr = to_lkr(amount, currency);
+        if lkr < 0 {
+            self.log("Lead Investigator", "salary_in_lkr", f"{amount} {currency}: unknown currency");
+            return f"Unknown currency {currency}.";
+        }
+        self.log("Lead Investigator", "salary_in_lkr", f"{amount:,.0f} {currency} = about Rs. {lkr:,.0f} per month");
+        return f"{amount:,.0f} {currency} is about Rs. {lkr:,.0f} per month (approximate fixed rate).";
+    }
+
     def ask_user(question: str) -> str {
         if self.answers {
             return "You already received the person's answers; decide with what you have.";
@@ -451,7 +480,7 @@ walker:pub Investigate {
     }
 
     def investigate(offer: str, facts: OfferFacts, answers: list[str]) -> InvestigationNotes by llm(
-        tools=[self.lookup_licence, self.lookup_agency_name, self.check_contacts, self.community_reports, self.country_guidance, self.ask_user],
+        tools=[self.lookup_licence, self.lookup_agency_name, self.check_contacts, self.community_reports, self.country_guidance, self.salary_in_lkr, self.ask_user],
         temperature=0.1,
         max_react_iterations=8
     );
@@ -501,6 +530,50 @@ walker:pub Investigate {
                 );
             }
         }
+    }
+
+    # ----- supervisor double-checks the Extractor with plain patterns -----
+
+    def cross_check(facts: OfferFacts) -> OfferFacts {
+        source = self.text + "\n" + "\n".join(self.answers);
+        notes: list[str] = [];
+        fphones: list[str] = facts.phones;
+        known = [normalise_phone(p) for p in fphones];
+        for p in find_phones(source) {
+            if normalise_phone(p) not in known and p not in known {
+                facts.phones = facts.phones + [p];
+                known.append(normalise_phone(p));
+                notes.append(f"added missed phone {p}");
+            }
+        }
+        femails: list[str] = facts.emails;
+        known_mail = [e.lower().strip() for e in femails];
+        for e in find_emails(source) {
+            if e not in known_mail {
+                facts.emails = facts.emails + [e];
+                notes.append(f"added missed email {e}");
+            }
+        }
+        lic = find_licence(self.text);
+        extracted = re.sub(r"\D", "", facts.licence_no);
+        if lic and extracted != lic {
+            notes.append(f"licence number corrected from '{facts.licence_no}' to '{lic}' (as printed)" if extracted else f"added missed licence number {lic}");
+            facts.licence_no = lic;
+        }
+        if not facts.visa_type {
+            v = find_visa_word(source);
+            if v {
+                facts.visa_type = v;
+                facts.visa_evidence = v;
+                notes.append(f"added visa type '{v}' found in the text");
+            }
+        }
+        if notes {
+            self.log("Supervisor", "cross_check", "Extractor output corrected: " + "; ".join(notes));
+        } else {
+            self.log("Supervisor", "cross_check", "Extractor output confirmed by pattern check (phones, emails, licence, visa)");
+        }
+        return facts;
     }
 
     def ensure_register_checked {
@@ -582,11 +655,23 @@ walker:pub Investigate {
 
     can run with Root entry {
         self.log("Supervisor", "start", f"new case, {len(self.text)} characters" + (f", {len(self.answers)} answers from the person" if self.answers else ""));
-        facts = extract_facts(self.text + ("\n\nExtra answers from the person:\n" + "\n".join(self.answers) if self.answers else ""));
-        self.st.facts = facts;
+        facts = OfferFacts();
+        try {
+            facts = extract_facts(self.text + ("\n\nExtra answers from the person:\n" + "\n".join(self.answers) if self.answers else ""));
+        } except Exception as e {
+            self.log("Supervisor", "agent_failed", f"Extractor unavailable ({type(e).__name__}); falling back to pattern extraction only");
+        }
         self.log("Extractor", "extract_facts", f"{facts.job_title or '?'} in {facts.country or '?'}; agency '{facts.agency_name or 'none'}'; licence '{facts.licence_no or 'none'}'; visa '{facts.visa_type or 'not stated'}'; {len(facts.phones)} phone(s), {len(facts.fees)} fee(s)");
+        facts = self.cross_check(facts);
+        self.st.facts = facts;
 
-        notes = self.investigate(self.text, facts, self.answers);
+        notes = InvestigationNotes(summary="", specialists=[]);
+        try {
+            notes = self.investigate(self.text, facts, self.answers);
+        } except Exception as e {
+            self.log("Supervisor", "agent_failed", f"Lead Investigator unavailable ({type(e).__name__}); Supervisor runs the register, contact and community checks directly");
+            notes = InvestigationNotes(summary="The Supervisor ran the checks directly because the Lead Investigator was unavailable.", specialists=[Specialist.TRAFFICKING, Specialist.CONTRACT, Specialist.FEES]);
+        }
         self.log("Lead Investigator", "findings", notes.summary);
         self.ensure_register_checked();
 
@@ -606,9 +691,17 @@ walker:pub Investigate {
         experts = notes.specialists or [Specialist.FEES];
         self.log("Supervisor", "route", "calling " + ", ".join([e.name.title() + " expert" for e in experts]));
         soft: list[RedFlag] = [];
+        reviews: list[list[SoftFlag]] = [];
         with ThreadPoolExecutor(max_workers=3) as pool {
             futs = [pool.submit(specialist_review, e, self.text, facts, findings) for e in experts];
-            reviews = [f.result() for f in futs];
+            for (i, fut) in enumerate(futs) {
+                try {
+                    reviews.append(fut.result());
+                } except Exception as e {
+                    self.log("Supervisor", "agent_failed", f"{experts[i].name.title()} expert unavailable ({type(e).__name__}); continuing without it");
+                    reviews.append([]);
+                }
+            }
         }
         for (i, e) in enumerate(experts) {
             res = reviews[i];
@@ -617,7 +710,7 @@ walker:pub Investigate {
             soft.extend([soft_to_red(s, name) for s in res]);
         }
 
-        hard = self.register_flags + self.community_flags + rule_flags(facts);
+        hard = self.register_flags + self.community_flags + rule_flags(facts) + salary_flag(facts.salary_amount, facts.salary_currency, facts.job_title, self.text);
         candidates = dedupe(hard + soft);
         (kept, removed) = critic(candidates, self.text + "\n" + "\n".join(self.answers));
         for r in removed {
@@ -625,18 +718,35 @@ walker:pub Investigate {
         }
 
         lines = _flag_lines(kept);
+        prosecution: str = "";
+        defence: str = "";
         with ThreadPoolExecutor(max_workers=2) as pool {
             pf = pool.submit(prosecute, self.text, findings, lines);
             df = pool.submit(defend, self.text, findings, lines);
-            prosecution: str = pf.result();
-            defence: str = df.result();
+            try {
+                prosecution = pf.result();
+            } except Exception as e {
+                self.log("Supervisor", "agent_failed", f"Prosecutor unavailable ({type(e).__name__})");
+                prosecution = "(Prosecutor unavailable) The case rests on the red flags listed.";
+            }
+            try {
+                defence = df.result();
+            } except Exception as e {
+                self.log("Supervisor", "agent_failed", f"Defender unavailable ({type(e).__name__})");
+                defence = "(Defender unavailable) No defence was heard, so no agent flag is dismissed.";
+            }
         }
         self.log("Prosecutor", "argue", prosecution[:160]);
         self.log("Defender", "argue", defence[:160]);
-        ruling = judge_case(self.text, findings, lines, prosecution, defence);
+        ruling = JudgeRuling(summary=f"Verdict from the transparent rules: {len(kept)} supported red flag(s).", dismissed=[]);
+        try {
+            ruling = judge_case(self.text, findings, lines, prosecution, defence);
+        } except Exception as e {
+            self.log("Supervisor", "agent_failed", f"Judge unavailable ({type(e).__name__}); keeping every supported flag");
+        }
         final: list[RedFlag] = [];
         for (i, f) in enumerate(kept) {
-            if (i + 1) in ruling.dismissed and f.source not in [SRC_REGISTER, SRC_COMMUNITY, SRC_GUIDANCE] {
+            if (i + 1) in ruling.dismissed and f.source not in [SRC_REGISTER, SRC_COMMUNITY, SRC_GUIDANCE, SRC_SALARY] {
                 self.log("Judge", "dismissed", f.title);
             } else {
                 final.append(f);
@@ -645,7 +755,16 @@ walker:pub Investigate {
         sc = score_flags(final);
         self.log("Judge", "verdict", f"{sc.band} ({sc.total}/100): {ruling.summary[:140]}");
 
-        advice = advise(self.text, sc.band, _flag_lines(final), findings);
+        advice = Advice(
+            questions_to_ask=["What is your SLBFE licence number?", "Can I get a written contract before paying anything?", "Will every payment have an official receipt from the agency's company account?"],
+            next_steps=["Verify the agency on slbfe.lk or call the SLBFE 1989 hotline.", "Never hand over your passport or pay before verification.", "Travel only on an employment visa and register with the SLBFE before departure."],
+            report_draft=""
+        );
+        try {
+            advice = advise(self.text, sc.band, _flag_lines(final), findings);
+        } except Exception as e {
+            self.log("Supervisor", "agent_failed", f"Advisor unavailable ({type(e).__name__}); using standard SLBFE advice");
+        }
         self.log("Advisor", "advise", f"{len(advice.questions_to_ask)} questions, {len(advice.next_steps)} next steps");
 
         (offer_id, alerts) = self.save_case(sc.band, sc.total, ruling.summary);
@@ -681,6 +800,9 @@ sem Investigate.community_reports = "Check whether a phone number or email appea
 sem Investigate.community_reports.contact = "A phone number or email from the offer.";
 sem Investigate.country_guidance = "Read official guidance and known scam patterns for the destination country.";
 sem Investigate.country_guidance.country = "Destination country name in English.";
+sem Investigate.salary_in_lkr = "Convert the offered monthly salary to Sri Lankan rupees to judge whether it is realistic for the job.";
+sem Investigate.salary_in_lkr.amount = "Salary amount per month.";
+sem Investigate.salary_in_lkr.currency = "Currency code, e.g. USD, QAR, AED.";
 sem Investigate.ask_user = "Ask the job seeker one short, simple question about a decisive missing fact. Use sparingly.";
 sem Investigate.ask_user.question = "The question, in simple English.";
 

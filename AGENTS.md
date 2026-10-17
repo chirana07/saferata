@@ -75,13 +75,16 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
 8. **`sem` placement:** `sem` goes at top level (`sem Type.field = "...";`). Don't put double quotes inside a `sem` string.
 9. **Nested walkers:** a walker spawned inside another walker sends its `report`s to the HTTP response. `Investigate(quiet=True)` suppresses that; read `inv.st.result` instead.
 
-## Current status (17 Oct, ~12:35)
+## Current status (17 Oct, ~12:45)
 
 - **Working and verified on 0.34.24:** the live register lookup; the full agent team; the ask-the-person loop; the job board with its licence gate; impersonation-aware reviews; the community feed and alerts. Evals 8/8, API checks 11/11.
-- **In progress (backend hardening), next steps in order:**
-  1. **B1:** graceful degradation. Wrap each LLM agent call in `Investigate.run` with try/except and a safe fallback, logging a `Supervisor agent_failed` step. If the register is unreachable, fall back to a cached `Agency` node from the graph.
-  2. **B2:** the supervisor cross-checks the extractor with `rules.find_phones` / `find_emails` / `find_licence` / `find_visa_word` (already written and tested), fills anything the Extractor missed, and logs it as a step.
-  3. **B3:** salary realism rule. A tool converting the salary to LKR with fixed rates, and a flag for unrealistic pay for unskilled jobs.
-  4. **B4:** rerun the unit tests, `evals.jac` and `scripts/api_e2e.py`, then commit.
-- **Not done:** Jac Hammer deploy (the user does it in the web UI: Jac version 0.34.24, env vars `OLLAMA_API_KEY`/`GEMINI_API_KEY`), demo seed data, demo video.
+- **Backend hardening, done:**
+  - **B1:** every LLM agent call has a fallback. Failures are logged as `Supervisor agent_failed` and the case still finishes using the deterministic rules. If the register is unreachable, lookups use the cached `Agency` nodes in the graph. Verified with all network dependencies down: impersonation was still caught.
+  - **B2:** the supervisor cross-checks the Extractor with `rules.find_*`, adding missed phones and emails, correcting the licence number, and filling a missing visa type.
+  - **B3:** salary realism. The investigator has a `salary_in_lkr` tool, and the deterministic `SALARY_BAIT` flag (+15) fires when an unskilled job pays more than about Rs. 450,000 a month.
+- **Next ideas (backend):**
+  - flag a licence that expires within 30 days
+  - a duplicate-offer detector (same text, different numbers)
+  - a demo seed script
+- **Not done:** Jac Hammer deploy (the user does it in the web UI: Jac version 0.34.24, env vars `OLLAMA_API_KEY`/`GEMINI_API_KEY`), demo video.
 - **Restore point:** the git tag `jac-0.37-final` is the last version on jac 0.37.25.

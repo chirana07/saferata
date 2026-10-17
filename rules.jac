@@ -27,6 +27,19 @@ glob SRC_REGISTER = "SLBFE licensed-agency register (live)";
 glob SRC_GUIDANCE = "SLBFE public guidance";
 glob SRC_COMMUNITY = "SafeRata community reports";
 glob SRC_AGENT = "Agent judgement (evidence quoted)";
+glob SRC_SALARY = "Salary check (approximate fixed exchange rates)";
+
+"""Approximate LKR per unit, fixed for the demo (Oct 2026). Used only for a sanity band, never to quote money."""
+glob LKR_RATES: dict[str, float] = {
+    "LKR": 1.0, "RS": 1.0, "USD": 300.0, "EUR": 330.0, "GBP": 390.0, "QAR": 82.0, "AED": 82.0, "SAR": 80.0,
+    "KWD": 975.0, "OMR": 780.0, "BHD": 795.0, "MYR": 70.0, "SGD": 230.0, "JPY": 2.0, "KRW": 0.22,
+    "ILS": 80.0, "RUB": 3.5, "THB": 9.0, "MVR": 19.5, "AUD": 195.0, "CAD": 215.0
+};
+
+glob UNSKILLED_WORDS: list[str] = ["driver", "housemaid", "maid", "domestic", "cleaner", "cleaning", "helper", "labour", "labor", "factory", "data entry", "typing", "packing", "security", "guard", "caregiver", "waiter", "kitchen", "farm", "construction", "general worker"];
+
+"""Unskilled-job ceiling: a monthly salary above this for a no-experience job is a classic bait (about USD 1,500)."""
+glob UNSKILLED_CEILING_LKR: float = 450000.0;
 
 """Country notes the investigator can consult. Summarised from SLBFE / government public warnings."""
 glob COUNTRY_GUIDANCE: dict[str, str] = {
@@ -110,12 +123,38 @@ def find_visa_word(text: str) -> str {
     return "";
 }
 
+"""Monthly salary in LKR using fixed approximate rates; -1 if the currency is unknown."""
+def to_lkr(amount: float, currency: str) -> float {
+    code = re.sub(r"[^A-Z]", "", currency.upper());
+    if code in LKR_RATES {
+        return amount * LKR_RATES[code];
+    }
+    return -1.0;
+}
+
+def is_unskilled(job_title: str, text: str) -> bool {
+    low = (job_title + " " + text).lower();
+    return "no experience" in low or any([w in low for w in UNSKILLED_WORDS]);
+}
+
+"""Flag pay that is too good to be true for an unskilled job (deterministic, no LLM)."""
+def salary_flag(amount: float, currency: str, job_title: str, text: str) -> list[RedFlag] {
+    lkr = to_lkr(amount, currency);
+    if amount <= 0 or lkr < 0 or not is_unskilled(job_title, text) or lkr <= UNSKILLED_CEILING_LKR {
+        return [];
+    }
+    return [RedFlag(code="SALARY_BAIT", title="Salary too good to be true for this job", points=15,
+        evidence=f"{amount:,.0f} {currency} per month is about Rs. {lkr:,.0f}",
+        explanation=f"Unskilled or no-experience jobs abroad rarely pay more than about Rs. {UNSKILLED_CEILING_LKR:,.0f} a month. Very high pay is a common way to lure people into scams or trafficking.",
+        source=SRC_SALARY, agent="Rules engine")];
+}
+
 """Critic: keep a flag only if its evidence is literally in the offer (register/community flags are exempt)."""
 def critic(flags: list[RedFlag], text: str) -> tuple[list[RedFlag], list[str]] {
     kept: list[RedFlag] = [];
     removed: list[str] = [];
     for f in flags {
-        exempt = f.source == SRC_REGISTER or f.source == SRC_COMMUNITY;
+        exempt = f.source == SRC_REGISTER or f.source == SRC_COMMUNITY or f.source == SRC_SALARY;
         if exempt or evidence_in_text(f.evidence, text) {
             kept.append(f);
         } else {
@@ -195,6 +234,14 @@ test "pattern extraction finds phones, licence and visa but not bank accounts" {
     assert find_visa_word(t) == "tourist visa";
     assert find_phones("Call +7 925 000 1122 now") == ["+79250001122"];
     assert find_licence("no licence printed") == "";
+}
+
+test "salary bait rule" {
+    assert to_lkr(1500.0, "USD") == 450000.0;
+    assert to_lkr(10.0, "XYZ") == -1.0;
+    assert len(salary_flag(2500.0, "USD", "Security guard", "no experience")) == 1;
+    assert len(salary_flag(2000.0, "QAR", "Light vehicle driver", "")) == 0;
+    assert len(salary_flag(3000.0, "USD", "Software engineer", "5 years experience")) == 0;
 }
 
 test "scoring bands" {
