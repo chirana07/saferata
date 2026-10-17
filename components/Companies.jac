@@ -1,6 +1,6 @@
 """Companies list + company page, ported from the layout-coder design; live SLBFE register data and graph-derived relations."""
 
-import from "lucide-react" { ArrowLeft, Flag }
+import from "lucide-react" { ArrowLeft, Flag, Search, X }
 import from jobboard { ListAgencies, AddReview, AgencyView, JobView, ReviewView, PostResult }
 import from .ui { risk_of, SafetyIndicator, VerifyBadge, LiveTag, EmptyState, PageHeader }
 
@@ -41,7 +41,8 @@ def:pub Companies(refresh: int) -> JsxElement {
         text: str = "",
         evidence: str = "",
         sending: bool = False,
-        message: str = "";
+        message: str = "",
+        search: str = "";
 
     async def load -> None {
         result = root spawn ListAgencies();
@@ -168,10 +169,36 @@ def:pub Companies(refresh: int) -> JsxElement {
         </div>;
     }
 
+    term = search.strip().lower();
+    filtered_agencies = [a for a in agencies if (not term or term in (a.name + " " + a.licence_no + " " + " ".join(a.phones)).lower())];
+
     return <div>
         <PageHeader eyebrow="Company intelligence" title="Know who you're" accent="dealing with."><LiveTag label="Live SLBFE register"/></PageHeader>
+        
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="relative min-w-[280px] flex-1 max-w-lg">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
+                <input
+                    value={search}
+                    onChange={lambda (e: ChangeEvent) { search = e.target.value; }}
+                    placeholder="Search by agency name, licence number (e.g. 3500), or phone..."
+                    className="w-full rounded-xl border border-border bg-card pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-sm"
+                />
+                {if search.strip() {
+                    <button onClick={lambda -> None { search = ""; }} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4"/>
+                    </button>
+                }}
+            </div>
+            <span className="font-mono text-xs text-muted-foreground">
+                {f"Showing {len(filtered_agencies)} of {len(agencies)} agencies"}
+            </span>
+        </div>
+
         {if len(agencies) == 0 {
             <EmptyState title="No agencies verified yet" body="Agencies appear here after a check or a job posting finds them on the SLBFE register."/>
+        } elif len(filtered_agencies) == 0 {
+            <EmptyState title="No matching agencies found" body="Try searching with a different agency name or SLBFE licence number (e.g. 3500 or 1712)."/>
         } else {
             <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
                 <table className="w-full min-w-[640px] text-sm">
@@ -200,7 +227,7 @@ def:pub Companies(refresh: int) -> JsxElement {
                                 <td className="font-mono text-xs">{str(a.reports)}</td>
                                 <td className="pr-5 text-right font-medium text-primary">Open profile →</td>
                             </tr>
-                            for a in agencies
+                            for a in filtered_agencies
                         ]}
                     </tbody>
                 </table>

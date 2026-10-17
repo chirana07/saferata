@@ -86,16 +86,24 @@ def:pub Section(category: str, title: str, children: any = None) -> JsxElement {
     </section>;
 }
 
-def:pub JobCard(job: JobView, matchv: int, reasons: list[str], variant: str, onOpen: Callable[[str], None]) -> JsxElement {
+def:pub JobCard(job: JobView, matchv: int, reasons: list[str], variant: str, onOpen: Callable[[str], None], is_comparing: bool = False, onToggleCompare: Callable[[str], None] = None) -> JsxElement {
     risk = risk_of(job.band, job.score);
     def open_it(e: MouseEvent) {
         onOpen(job.id);
     }
-    return <button onClick={open_it} className={"group relative flex flex-col rounded-xl border border-border bg-card p-5 text-left shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lift rise-in " + ("sm:col-span-2" if variant == "wide" else "")}>
+    return <div onClick={open_it} className={"cursor-pointer group relative flex flex-col rounded-xl border border-border bg-card p-5 text-left shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lift rise-in " + ("sm:col-span-2" if variant == "wide" else "")}>
         <div className="flex items-start justify-between gap-3">
-            <CountryTag country={job.country}/>
-            {if len(job.warnings) > 0 {
-                <span className="rounded-md border border-primary/20 bg-secondary px-2 py-0.5 text-[10px] font-semibold text-primary-deep">Impersonators reported</span>
+            <div className="flex flex-wrap items-center gap-2">
+                <CountryTag country={job.country}/>
+                {if len(job.warnings) > 0 {
+                    <span className="rounded-md border border-primary/20 bg-secondary px-2 py-0.5 text-[10px] font-semibold text-primary-deep">Impersonators reported</span>
+                }}
+            </div>
+            {if onToggleCompare {
+                <button onClick={lambda (e: MouseEvent) { e.stopPropagation(); onToggleCompare(job.id); }} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all shadow-sm " + ("border-primary bg-primary text-primary-foreground font-bold" if is_comparing else "border-border bg-muted/60 text-muted-foreground hover:border-primary/50 hover:bg-card hover:text-foreground")}>
+                    <Scale className="h-3.5 w-3.5"/>
+                    {if is_comparing { "Comparing"; } else { "Compare"; }}
+                </button>
             }}
         </div>
         {if variant == "salary" {
@@ -130,7 +138,7 @@ def:pub JobCard(job: JobView, matchv: int, reasons: list[str], variant: str, onO
                 <span className="eyebrow text-risk">{f"{job.credible_fraud_reports} fraud report(s)"}</span>
             }}
         </div>
-    </button>;
+    </div>;
 }
 
 def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> JsxElement {
@@ -544,22 +552,22 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                 <EmptyState title="No roads lead here — yet" body="No jobs match these filters. Try widening the destination or salary range."/>
             } else {
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {[<JobCard key={j.id} job={j} matchv={match_pct(matches, j.id)} reasons={match_reasons(matches, j.id)} variant={"wide" if (i == 0 and not term and active == 0) else variants[i % 5]} onOpen={open_job}/> for (i, j) in enumerate(results)]}
+                    {[<JobCard key={j.id} job={j} matchv={match_pct(matches, j.id)} reasons={match_reasons(matches, j.id)} variant={"wide" if (i == 0 and not term and active == 0) else variants[i % 5]} onOpen={open_job} is_comparing={j.id in compare_ids} onToggleCompare={toggle_compare}/> for (i, j) in enumerate(results)]}
                 </div>
             }}
         </section>
 
         {if len(compare_ids) > 0 {
-            <aside className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full border border-primary/40 bg-card/95 px-5 py-3 shadow-lift backdrop-blur rise-in">
-                <span className="flex items-center gap-2 text-xs font-semibold">
+            <aside className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-3 rounded-2xl border border-primary/50 bg-card/95 px-6 py-3.5 shadow-2xl backdrop-blur-md rise-in">
+                <div className="flex items-center gap-2 text-xs font-bold text-foreground">
                     <Scale className="h-4 w-4 text-primary"/>
-                    <span>{f"{len(compare_ids)}/3 jobs in compare"}</span>
-                </span>
-                <button onClick={lambda -> None { show_compare = True; }} className="rounded-full bg-primary px-3.5 py-1 text-xs font-bold text-primary-foreground hover:bg-primary-deep">
-                    Compare now
+                    <span>{f"Comparing {len(compare_ids)} of 3 jobs"}</span>
+                </div>
+                <button onClick={lambda -> None { show_compare = True; }} className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary-deep transition-all">
+                    Compare Side-by-Side →
                 </button>
-                <button onClick={lambda -> None { compare_ids = []; put_compare([]); }} className="text-muted-foreground hover:text-foreground">
-                    <X className="h-3.5 w-3.5"/>
+                <button onClick={lambda -> None { compare_ids = []; put_compare([]); }} className="rounded-lg p-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" title="Clear comparison">
+                    <X className="h-4 w-4"/>
                 </button>
             </aside>
         }}
