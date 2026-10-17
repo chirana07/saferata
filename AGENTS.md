@@ -84,7 +84,7 @@ After moving declarations between modules, run `rm -rf .jac/cache`, because 0.34
   - **B3:** salary realism. The investigator has a `salary_in_lkr` tool, and the deterministic `SALARY_BAIT` flag (+15) fires when an unskilled job pays more than about Rs. 450,000 a month.
   - **Licence expiry:** the register's `Valid upto` date is checked (`rules.licence_expiry_flag`). An expired licence scores +35; one expiring within 30 days scores +10.
   - **Duplicate-offer detector:** `Investigate.find_reposts` walks earlier `Offer` nodes. When the wording matches (word 3-gram similarity of at least 0.8, digits ignored) but the contact numbers differ, it flags `REPOST` (+20). Registered agency numbers are excluded, so genuine reposts don't trigger it.
-  - Both are unit-tested in `rules.jac`, but **not yet run live through the server**. Restart `jac034 start` to load them, then run `python3 scripts/api_e2e.py` once.
+  - Both are unit-tested in `rules.jac`, and the live server run passed `scripts/api_e2e.py` 11/11 with them loaded (17 Oct, 13:00).
 - **Next ideas (backend):** a demo seed script.
 - **Not done:** Jac Hammer deploy (the user does it in the web UI: Jac version 0.34.24, env vars `OLLAMA_API_KEY`/`GEMINI_API_KEY`), demo video.
 - **Restore point:** the git tag `jac-0.37-final` is the last version on jac 0.37.25.
