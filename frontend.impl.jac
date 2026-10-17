@@ -16,6 +16,7 @@ impl app.investigate -> None {
         error = "The agents could not finish. Please try again.";
     }
     busy = False;
+    refresh = refresh + 1;
 }
 
 impl app.submit_answers -> None {
@@ -32,4 +33,5 @@ impl app.submit_answers -> None {
         error = "The agents could not finish. Please try again.";
     }
     busy = False;
+    refresh = refresh + 1;
 }

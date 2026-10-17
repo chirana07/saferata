@@ -444,16 +444,27 @@ sem Investigate.country_guidance.country = "Destination country name in English.
 sem Investigate.ask_user = "Ask the job seeker one short, simple question about a decisive missing fact. Use sparingly.";
 sem Investigate.ask_user.question = "The question, in simple English.";
 
+obj CheckView {
+    has id: str,
+        job: str,
+        country: str,
+        agency: str,
+        verdict: str,
+        score: int,
+        created_at: str,
+        alerts: list[str];
+}
+
 walker:pub RecentChecks {
-    has limit: int = 12;
+    has limit: int = 10;
 
     can list with Root entry {
         offers = [root -->[?:Offer]];
         offers = offers[-self.limit:];
         offers.reverse();
         for o in offers {
-            alerts = [a.message for a in [o -->[?:Alert]]];
-            report {"id": jid(o), "job": o.job, "country": o.country, "agency": o.agency_name, "verdict": o.verdict, "score": o.score, "created_at": o.created_at, "alerts": alerts};
+            report CheckView(id=jid(o), job=o.job, country=o.country, agency=o.agency_name, verdict=o.verdict,
+                score=o.score, created_at=o.created_at, alerts=[a.message for a in [o -->[?:Alert]]]);
         }
     }
 }

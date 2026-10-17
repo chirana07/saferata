@@ -3,6 +3,7 @@
 import from agents { Investigate, CaseReport, Step }
 import from rules { RedFlag }
 import from .components.Board { JobBoard }
+import from .components.Feed { CommunityFeed }
 
 glob SAMPLE_TRAFFICKING = "URGENT HIRING!!! IT / Data Entry jobs in THAILAND\nSalary USD 1500 per month + free accommodation + food\nNo experience needed, basic English and typing only.\nAir ticket FREE. Travel on tourist visa, company will change to work visa after arrival.\nOnly 5 seats left - pay Rs. 150,000 processing fee to confirm your seat.\nDeposit to Commercial Bank account 8012345678 (K. Perera). Send slip on WhatsApp +94 76 555 1234";
 
@@ -41,6 +42,7 @@ def:pub app -> JsxElement {
         outcome: CaseReport | None = None,
         answers: list[str] = [],
         tab: str = "check",
+        refresh: int = 0,
         error: str = "";
 
     async def investigate -> None;
@@ -195,6 +197,9 @@ def:pub app -> JsxElement {
                 <h2>Sources</h2>
                 <ul>{[<li key={i}><b>{src.name}</b>{": " + src.detail + " "}<a href={src.url} target="_blank">{src.url}</a></li> for (i, src) in enumerate(outcome.sources)]}</ul>
             </section>
+        }}
+        {if tab == "check" {
+            <CommunityFeed refresh={refresh}/>
         }}
     </div>
 }
