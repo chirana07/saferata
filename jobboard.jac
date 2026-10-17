@@ -174,6 +174,41 @@ walker:pub PostJob {
     }
 }
 
+obj AgencyView {
+    has id: str,
+        licence_no: str,
+        name: str,
+        phones: list[str],
+        email: str,
+        valid_upto: str,
+        checked_at: str,
+        jobs: list[JobView],
+        reports: int,
+        credible_fraud: int,
+        warnings: list[str];
+}
+
+def agency_view(a: Agency) -> AgencyView {
+    jobs = [job_view(j) for j in [a -->[?:Job]]];
+    reports = sum([len(j.reviews) for j in jobs]);
+    fraud = sum([j.credible_fraud_reports for j in jobs]);
+    warns: list[str] = [];
+    for j in jobs {
+        warns.extend(j.warnings);
+    }
+    return AgencyView(id=jid(a), licence_no=a.licence_no, name=a.name, phones=a.phones, email=a.email, valid_upto=a.valid_upto,
+        checked_at=a.checked_at, jobs=jobs, reports=reports, credible_fraud=fraud, warnings=warns);
+}
+
+"""Companies screen: every agency the system has verified on the SLBFE register, with its jobs and worker reports."""
+walker:pub ListAgencies {
+    can list with Root entry {
+        for a in [root -->[?:Agency]] {
+            report agency_view(a);
+        }
+    }
+}
+
 walker:pub ListJobs {
     can list with Root entry {
         jobs = [j for j in [root -->[?:Job]]];

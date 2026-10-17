@@ -224,6 +224,7 @@ obj CaseReport {
         facts: OfferFacts | None = None,
         sources: list[Source] = [],
         steps: list[Step] = [],
+        confidence: int = 0,
         offer_id: str = "";
 }
 
@@ -300,6 +301,15 @@ def _record_from_node(a: Agency) -> AgencyRecord {
 
 def _agency_summary(a: AgencyRecord) -> str {
     return f"{a.name} (licence {a.licence_no}, valid until {a.valid_upto}); registered phones: {', '.join(a.phones) or 'none'}; email: {a.email or 'none'}";
+}
+
+"""Confidence (0-100) in the verdict: how many key facts were found, whether the register answered live, and how many agents failed."""
+def _confidence(facts: OfferFacts, register_live: bool, failures: int) -> int {
+    known = len([x for x in [facts.job_title, facts.country, facts.visa_type, facts.licence_no or facts.agency_name] if x]);
+    known += 1 if facts.salary_amount > 0 else 0;
+    known += 1 if facts.phones else 0;
+    score = 35 + known * 8 + (12 if register_live else 0) - failures * 12;
+    return max(20, min(95, score));
 }
 
 def _flag_lines(flags: list[RedFlag]) -> list[str] {
@@ -824,7 +834,8 @@ walker:pub Investigate {
         self.st.result = CaseReport(status="done", band=sc.band, score=sc.total, hard_points=sc.hard_points, soft_points=sc.soft_points,
             flags=final, removed=removed, prosecution=prosecution, defence=defence, judge=ruling.summary, advice=advice,
             agency=self.st.agency, register_status=self.register_status.name, community=self.community, alerts_sent=alerts,
-            facts=facts, sources=sources, steps=self.steps, offer_id=offer_id);
+            facts=facts, sources=sources, steps=self.steps, offer_id=offer_id,
+            confidence=_confidence(facts, self.register_status != RegisterStatus.UNREACHABLE and self.register_status != RegisterStatus.NOT_CHECKED and "cached" not in self.register_checked_at, len([x for x in self.steps if x.action == "agent_failed"])));
         if not self.quiet {
             report self.st.result;
         }
