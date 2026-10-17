@@ -53,7 +53,7 @@ describe("SafeRata API Client", () => {
     expect(report).toBeDefined();
     expect(report?.band).toBe("DANGER");
     expect(report?.flags.length).toBe(1);
-    expect(report?.flags[0].evidence).toBe("Travel on tourist visa");
+    expect(report?.flags[0]?.evidence).toBe("Travel on tourist visa");
   });
 
   it("handles successful ListJobs walker response", async () => {
@@ -84,7 +84,7 @@ describe("SafeRata API Client", () => {
     const { jobs, error } = await apiListJobs();
     expect(error).toBeNull();
     expect(jobs).toHaveLength(1);
-    expect(jobs?.[0].title).toBe("Electrician");
+    expect(jobs?.[0]?.title).toBe("Electrician");
   });
 
   it("handles network failure gracefully", async () => {
@@ -162,6 +162,12 @@ describe("SafeRata API Client", () => {
       appeals: [],
       corrections: [],
       appealable: [],
+      occupation: "Technician",
+      experience_years: 2,
+      contract_type: "Fixed term",
+      contract_months: 24,
+      accommodation: "Provided",
+      deductions: "",
     };
 
     const uiJob = backendJobToUiJob(liveJobData);

@@ -26,7 +26,7 @@ function renderDiscover() {
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    component: DiscoverRoute.options.component,
+    component: DiscoverRoute.options.component!,
   });
 
   // Dummy route for Link to="/jobs/$id"
@@ -111,6 +111,7 @@ describe("Discover Route Component", () => {
       salary_amount: 5500,
       salary_currency: "QAR",
       salary_lkr: 450000,
+      take_home_lkr: 420000,
       agency_name: "Apex Manpower",
       licence_no: "3999",
       band: "LOOKS SAFE",
@@ -124,8 +125,14 @@ describe("Discover Route Component", () => {
       contract_type: "Fixed term",
       contract_months: 24,
       accommodation: "Provided",
+      deductions: "",
       worker_fee_lkr: 0,
       top_flags: [],
+      warnings: [],
+      reviews: [],
+      credible_fraud_reports: 0,
+      appeals: [],
+      corrections: [],
       appealable: [],
     };
 
@@ -146,7 +153,10 @@ describe("Discover Route Component", () => {
   it("handles backend error gracefully without crashing", async () => {
     vi.spyOn(api, "apiListJobs").mockResolvedValue({
       jobs: null,
-      error: "Backend network error",
+      error: {
+        isNetworkError: true,
+        message: "Backend network error",
+      },
     });
 
     renderDiscover();

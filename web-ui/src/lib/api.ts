@@ -13,7 +13,7 @@ import { z } from "zod";
 
 // Base URL configured via environment variable with local fallback
 export const BACKEND_URL =
-  (import.meta.env.VITE_BACKEND_URL as string | undefined)?.replace(/\/$/, "") ||
+  (import.meta.env as Record<string, string | undefined>)["VITE_BACKEND_URL"]?.replace(/\/$/, "") ||
   "http://localhost:8000";
 
 // --- Schema Definitions ---
@@ -174,7 +174,7 @@ export interface ApiError {
 export async function callWalker<T>(
   walkerName: string,
   payload: Record<string, unknown>,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   timeoutMs = 35000,
 ): Promise<{ data: T | null; error: ApiError | null }> {
   const controller = new AbortController();
@@ -307,14 +307,12 @@ export async function apiAddReview(reviewData: {
   text: string;
   evidence: string;
 }) {
-  const res = await callWalker<[BackendPostResult | { job: BackendJobView }]>(
-    "AddReview",
-    reviewData,
-    z.array(z.any()),
-    25000,
-  );
+  const res = await callWalker<unknown[]>("AddReview", reviewData, z.array(z.unknown()), 25000);
   if (res.error) return { result: null, error: res.error };
-  return { result: res.data?.[0] ?? null, error: null };
+  return {
+    result: (res.data?.[0] as BackendPostResult | { job: BackendJobView } | null) ?? null,
+    error: null,
+  };
 }
 
 /**
@@ -329,6 +327,80 @@ export async function apiRecentChecks(limit = 10) {
   );
   if (res.error) return { checks: null, error: res.error };
   return { checks: res.data ?? [], error: null };
+}
+
+export const AgencyViewSchema = z.object({
+  id: z.string(),
+  licence_no: z.string(),
+  name: z.string(),
+  phones: z.array(z.string()).default([]),
+  email: z.string().default(""),
+  valid_upto: z.string().default(""),
+  checked_at: z.string().default(""),
+  jobs: z.array(JobViewSchema).default([]),
+  reports: z.number().default(0),
+  credible_fraud: z.number().default(0),
+  warnings: z.array(z.string()).default([]),
+  related_checks: z.array(z.string()).default([]),
+  impersonator_numbers: z.array(z.string()).default([]),
+});
+export type BackendAgencyView = z.infer<typeof AgencyViewSchema>;
+
+/**
+ * Fetch verified agencies from the shared graph.
+ */
+export async function apiListAgencies() {
+  const res = await callWalker<BackendAgencyView[]>(
+    "ListAgencies",
+    {},
+    z.array(AgencyViewSchema),
+    10000,
+  );
+  if (res.error) return { agencies: null, error: res.error };
+  return { agencies: res.data ?? [], error: null };
+}
+
+export const JobMatchSchema = z.object({
+  job_id: z.string(),
+  match: z.number(),
+  reasons: z.array(z.string()).default([]),
+  cautions: z.array(z.string()).default([]),
+});
+export type BackendJobMatch = z.infer<typeof JobMatchSchema>;
+
+/**
+ * Match jobs against candidate profile.
+ */
+export async function apiMatchJobs(profile: {
+  occupation?: string;
+  skills?: string[];
+  destinations?: string[];
+  min_salary_lkr?: number;
+  experience_years?: number;
+  needs_accommodation?: boolean;
+}) {
+  const res = await callWalker<BackendJobMatch[]>(
+    "MatchJobs",
+    profile,
+    z.array(JobMatchSchema),
+    10000,
+  );
+  if (res.error) return { matches: null, error: res.error };
+  return { matches: res.data ?? [], error: null };
+}
+
+/**
+ * Appeal a safety finding on a job posting.
+ */
+export async function apiAppealFinding(jobId: string, finding: string, explanation: string) {
+  const res = await callWalker<BackendJobView[]>(
+    "AppealFinding",
+    { job_id: jobId, finding, explanation },
+    z.array(JobViewSchema),
+    15000,
+  );
+  if (res.error) return { job: null, error: res.error };
+  return { job: res.data?.[0] ?? null, error: null };
 }
 
 /**

@@ -288,8 +288,12 @@ def _names_match(a: str, b: str) -> bool {
 
 """Most distinctive word of a name, used as the register's 'any part of name' query."""
 def _search_word(name: str) -> str {
-    toks = sorted(_name_tokens(name), key=lambda (t: str) { -len(t); });
-    return toks[0] if toks else name;
+    toks: list[str] = _name_tokens(name);
+    if not toks {
+        return name;
+    }
+    toks.sort(key=len, reverse=True);
+    return toks[0];
 }
 
 def _norm_text(s: str) -> str {
@@ -339,7 +343,7 @@ walker:pub Investigate {
         licence_not_found: bool = False,
         repost_flags: list[RedFlag] = [],
         quiet: bool = False;
-    has st: CaseState postinit;
+    has st: CaseState by postinit;
 
     def postinit {
         self.st = CaseState();
@@ -524,9 +528,12 @@ walker:pub Investigate {
             self.register_flags.extend(exp);
         }
         if self.st.agency is not None and self.st.facts is not None and self.register_status == RegisterStatus.VERIFIED {
-            ag = self.st.agency;
-            odd = [p for p in [normalise_phone(x) for x in self.st.facts.phones] if p and p not in ag.phones];
-            odd_mail = [e.lower().strip() for e in self.st.facts.emails if e.lower().strip() != ag.email];
+            ag: AgencyRecord = self.st.agency;
+            f_phones: list[str] = self.st.facts.phones;
+            f_emails: list[str] = self.st.facts.emails;
+            norm_phones: list[str] = [normalise_phone(x) for x in f_phones];
+            odd: list[str] = [p for p in norm_phones if p and p not in ag.phones];
+            odd_mail: list[str] = [e.lower().strip() for e in f_emails if e.lower().strip() != ag.email];
             if odd or odd_mail {
                 self.register_flags.append(
                     RedFlag(code="IMPERSONATION", title="Contact details not registered to this agency", points=30,

@@ -159,7 +159,7 @@ function Investigate() {
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             <button
-              onClick={start}
+              onClick={() => void start()}
               disabled={phase === "running"}
               className="inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
             >
@@ -385,7 +385,7 @@ function Investigate() {
                     ))}
                     <button
                       type="submit"
-                      disabled={phase === "running"}
+                      disabled={(phase as Phase) === "running"}
                       className="mt-2 inline-flex h-9 items-center justify-center rounded bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary-deep"
                     >
                       Submit answers & re-investigate

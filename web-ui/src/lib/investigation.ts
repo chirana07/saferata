@@ -140,7 +140,7 @@ export async function runInvestigation(
   const sim = analyse(text);
   return {
     result: { ...sim, isLive: false },
-    error: error?.message,
+    ...(error?.message ? { error: error.message } : {}),
     isLive: false,
   };
 }

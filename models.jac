@@ -4,7 +4,7 @@ Hosted (Jac Hammer): set OLLAMA_API_KEY and/or GEMINI_API_KEY as environment var
 Local dev: falls through to the local Ollama daemon.
 """
 import os;
-import from jaclang.byllm.lib { Model, ModelPool }
+import from byllm.lib { Model, ModelPool }
 
 def build_pool -> ModelPool {
     models: list[Model] = [];

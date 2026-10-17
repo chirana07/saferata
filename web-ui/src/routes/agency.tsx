@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Upload, Check, X, AlertTriangle } from "lucide-react";
 import { getCompany } from "@/lib/data";
-import { apiPostJob } from "@/lib/api";
+import { apiPostJob, apiAppealFinding } from "@/lib/api";
 import { useStore, setState, type AgencyListing } from "@/lib/store";
 import { PageHeader, VerifyBadge, SimulatedTag } from "@/components/sr/ui";
 import { cn } from "@/lib/utils";
@@ -296,6 +296,21 @@ function Agency() {
                                   toast.error("Add a short explanation");
                                   return;
                                 }
+                                apiAppealFinding(
+                                  l.id,
+                                  "worker fee exceeds typical range",
+                                  appealText.trim(),
+                                ).then(({ job, error }) => {
+                                  if (job) {
+                                    toast.success("Live Appeal submitted to Review Board", {
+                                      description: `Updated status on backend: ${job.band}`,
+                                    });
+                                  } else {
+                                    toast.success("Appeal submitted for independent review", {
+                                      description: "Saved locally (backend offline).",
+                                    });
+                                  }
+                                });
                                 setState((s) => ({
                                   ...s,
                                   listings: s.listings.map((x) =>
@@ -304,7 +319,6 @@ function Agency() {
                                 }));
                                 setAppeal(null);
                                 setAppealText("");
-                                toast.success("Appeal submitted for independent review");
                               }}
                               className="rounded bg-ink px-3 py-1.5 font-semibold text-ink-foreground"
                             >
