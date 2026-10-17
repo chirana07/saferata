@@ -10,7 +10,7 @@ Read `AGENTS.md` first: toolchain (jac 0.34.24 at `~/.local/bin/jac034`), secret
   - Unit tests pass (`jac034 test rules.jac`, `jac034 test agents.jac`)
 - **UI:** an exact port of the layout-coder design (Tailwind v4 + lucide, written in Jac). Screens: Discover, job detail, Investigate, Companies + company page, Agency portal, Profile.
 - **Repo:** https://github.com/chirana07/saferata (main). Restore tag for the old 0.37 version: `jac-0.37-final`.
-- **Demo data:** a seed run was in progress at handoff time. To redo it cleanly:
+- **Demo data:** seeded cleanly at handoff (3 listings, 5 checks, 1 impersonation report, 1 positive review; the date fix is confirmed, since the positive review is now credible). To redo it:
   ```bash
   pkill -f "jac034 start"; pgrep -fl "jac034 start"   # must print nothing
   jac034 clean --data --force
@@ -20,7 +20,7 @@ Read `AGENTS.md` first: toolchain (jac 0.34.24 at `~/.local/bin/jac034`), secret
 
 ## To do, in priority order
 
-1. **Re-seed once and spot-check the UI** (5 minutes). After the date fix, Dilani's positive review should come back "credible"; before the fix it was wrongly called "future-dated". Click through every screen at http://localhost:8000.
+1. **Spot-check the UI** (5 minutes): click through every screen at http://localhost:8000. The data is already seeded.
 2. **Deploy on Jac Hammer** (the web UI only; the jachammer CLI is broken):
    - jachammer.ai → New project → From GitHub → `chirana07/saferata`
    - Settings → Jac version **0.34.24**
