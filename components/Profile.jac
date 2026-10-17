@@ -1,6 +1,10 @@
-"""Worker profile (kept only in this browser) used by MatchJobs to rank listings. Safety is never affected by it."""
+"""Work profile (kept only in this browser), ported from the layout-coder design. Feeds MatchJobs; never affects safety."""
 
-import from .theme { INK, MUTED_INK, PRIMARY, MUTED, BORDER, CARD, LABEL }
+import from .ui { PageHeader }
+
+glob STEPS: list[str] = ["Occupation", "Experience", "Destinations & pay", "Preferences"];
+glob COUNTRIES: list[str] = ["Qatar", "Saudi Arabia", "United Arab Emirates", "Kuwait", "Oman", "Malaysia", "Japan", "South Korea", "Israel"];
+glob INPUT = "mt-1 h-11 w-full rounded-md border border-input bg-card px-3 text-sm font-normal focus:border-primary";
 
 """Read one profile field from this browser (empty default if missing or storage is blocked)."""
 def:pub prof(key: str, fallback: str) -> str {
@@ -20,13 +24,16 @@ def put(key: str, value: str) {
 }
 
 def:pub Profile -> JsxElement {
-    has name: str = "",
+    has step: int = 0,
+        name: str = "",
         occupation: str = "",
         skills: str = "",
         experience: str = "0",
-        destinations: str = "",
+        qualifications: str = "",
+        destinations: list[str] = [],
         min_salary: str = "150000",
         accommodation: bool = True,
+        preferences: str = "",
         saved: str = "";
 
     can with entry {
@@ -34,9 +41,11 @@ def:pub Profile -> JsxElement {
         occupation = prof("occupation", "");
         skills = prof("skills", "");
         experience = prof("experience", "0");
-        destinations = prof("destinations", "");
+        qualifications = prof("qualifications", "");
+        destinations = [x.strip() for x in prof("destinations", "").split(",") if x.strip()];
         min_salary = prof("min_salary", "150000");
         accommodation = prof("accommodation", "yes") == "yes";
+        preferences = prof("preferences", "");
     }
 
     def save {
@@ -44,44 +53,72 @@ def:pub Profile -> JsxElement {
         put("occupation", occupation);
         put("skills", skills);
         put("experience", experience);
-        put("destinations", destinations);
+        put("qualifications", qualifications);
+        put("destinations", ", ".join(destinations));
         put("min_salary", min_salary);
         put("accommodation", "yes" if accommodation else "no");
+        put("preferences", preferences);
         put("saved", "yes");
-        saved = "Saved in this browser. Discover now ranks listings for you.";
+        saved = "Preferences saved in this browser. Discover now shows your match on every listing.";
     }
 
-    inp = {"width": "100%", "boxSizing": "border-box", "padding": "9px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "4px", "fontFamily": "inherit"};
+    def toggle_dest(c: str) {
+        destinations = [d for d in destinations if d != c] if c in destinations else destinations + [c];
+    }
 
-    return <div style={{"display": "grid", "gridTemplateColumns": "minmax(0, 7fr) minmax(0, 5fr)", "gap": "18px", "alignItems": "start"}}>
-        <div style={CARD}>
-            <h1 style={{"fontSize": "30px", "margin": "0 0 4px"}}>{"Tell us what "}<span style={{"color": PRIMARY}}>{"you're good at."}</span></h1>
-            <p style={{"color": MUTED_INK, "marginTop": "0"}}>Used only to rank listings on Discover. Stored in this browser, never on our server.</p>
-            <div style={{"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px"}}>
-                <label style={{"fontSize": "13px"}}>Preferred name<input value={name} onChange={lambda (e: ChangeEvent) { name = e.target.value; }} style={inp}/></label>
-                <label style={{"fontSize": "13px"}}>Occupation<input placeholder="e.g. Driver, Chef, Caregiver" value={occupation} onChange={lambda (e: ChangeEvent) { occupation = e.target.value; }} style={inp}/></label>
-                <label style={{"fontSize": "13px"}}>Skills (comma separated)<input placeholder="e.g. Gulf licence, NVQ Level 3" value={skills} onChange={lambda (e: ChangeEvent) { skills = e.target.value; }} style={inp}/></label>
-                <label style={{"fontSize": "13px"}}>Years of experience<input value={experience} onChange={lambda (e: ChangeEvent) { experience = e.target.value; }} style={inp}/></label>
-                <label style={{"fontSize": "13px"}}>Preferred destinations (comma separated)<input placeholder="e.g. Qatar, Japan" value={destinations} onChange={lambda (e: ChangeEvent) { destinations = e.target.value; }} style={inp}/></label>
-                <label style={{"fontSize": "13px"}}>Minimum monthly salary (LKR)<input value={min_salary} onChange={lambda (e: ChangeEvent) { min_salary = e.target.value; }} style={inp}/></label>
+    filled = len([x for x in [occupation, skills, experience != "0", qualifications, len(destinations) > 0, min_salary, preferences, name] if x]);
+    pct = int(100 * filled / 8);
+
+    return <div>
+        <PageHeader eyebrow="Work profile" title="Tell us what" accent="you're good at.">
+            <div className="w-48"><div className="flex justify-between text-xs"><span className="eyebrow">Complete</span><span className="font-mono font-semibold">{f"{pct}%"}</span></div><div className="mt-1 h-1.5 rounded-sm bg-secondary"><div className="h-full rounded-sm bg-primary transition-all" style={{"width": f"{pct}%"}}></div></div></div>
+        </PageHeader>
+        <div className="grid gap-10 lg:grid-cols-[200px_1fr_260px]">
+            <ol className="flex gap-2 overflow-x-auto lg:flex-col">
+                {[<li key={s}><button onClick={lambda -> None { step = i; }} className={"flex w-full items-center gap-3 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm font-medium " + ("bg-card text-foreground shadow-card" if step == i else "text-muted-foreground")}><span className="font-mono text-xs">{f"0{i + 1}"}</span>{s}</button></li> for (i, s) in enumerate(STEPS)]}
+            </ol>
+            <div className="space-y-5 rise-in">
+                {if step == 0 {
+                    <div className="space-y-5">
+                        <label className="block text-sm font-semibold">Preferred name<input value={name} onChange={lambda (e: ChangeEvent) { name = e.target.value; }} className={INPUT}/></label>
+                        <label className="block text-sm font-semibold">Occupation<input value={occupation} onChange={lambda (e: ChangeEvent) { occupation = e.target.value; }} placeholder="e.g. Driver, Chef, Caregiver" className={INPUT}/></label>
+                        <label className="block text-sm font-semibold">Skills <span className="font-normal text-muted-foreground">(comma separated)</span><input value={skills} onChange={lambda (e: ChangeEvent) { skills = e.target.value; }} className={INPUT}/></label>
+                    </div>
+                } elif step == 1 {
+                    <div className="space-y-5">
+                        <label className="block text-sm font-semibold">Years of experience<input type="number" value={experience} onChange={lambda (e: ChangeEvent) { experience = e.target.value; }} className={INPUT}/></label>
+                        <label className="block text-sm font-semibold">Qualifications<input value={qualifications} onChange={lambda (e: ChangeEvent) { qualifications = e.target.value; }} placeholder="e.g. NVQ Level 3, JLPT N4" className={INPUT}/></label>
+                    </div>
+                } elif step == 2 {
+                    <div className="space-y-5">
+                        <div className="text-sm font-semibold">Preferred destinations
+                            <div className="mt-2 flex flex-wrap gap-2">{[<button key={c} onClick={lambda -> None { toggle_dest(c); }} className={"h-9 rounded-md border px-3 text-sm font-medium " + ("border-primary bg-primary text-primary-foreground" if c in destinations else "border-border bg-card hover:border-primary")}>{c}</button> for c in COUNTRIES]}</div>
+                        </div>
+                        <label className="block text-sm font-semibold">Minimum monthly salary (LKR)<input type="number" value={min_salary} onChange={lambda (e: ChangeEvent) { min_salary = e.target.value; }} className={INPUT}/></label>
+                        <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={accommodation} onChange={lambda (e: ChangeEvent) { accommodation = e.target.checked; }} className="h-4 w-4 accent-[var(--primary)]"/> I need accommodation provided</label>
+                    </div>
+                } else {
+                    <div className="space-y-5">
+                        <label className="block text-sm font-semibold">Work preferences or constraints<textarea rows={3} value={preferences} onChange={lambda (e: ChangeEvent) { preferences = e.target.value; }} placeholder="e.g. Day shifts only, want to return home for Avurudu" className="mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm font-normal"/></label>
+                    </div>
+                }}
+                <div className="flex gap-2 border-t border-border pt-5">
+                    {if step > 0 { <button onClick={lambda -> None { step = step - 1; }} className="h-11 rounded-md border border-border bg-card px-4 text-sm font-semibold">Back</button> }}
+                    <button onClick={lambda -> None { if step < 3 { step = step + 1; } else { save(); } }} className="h-11 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">{"Continue" if step < 3 else "Save preferences"}</button>
+                    {if step < 3 { <button onClick={lambda -> None { save(); }} className="h-11 px-3 text-sm font-semibold text-muted-foreground">Save now</button> }}
+                </div>
+                {if saved { <p className="text-sm font-medium text-safe">{saved}</p> }}
             </div>
-            <label style={{"display": "flex", "gap": "8px", "alignItems": "center", "marginTop": "12px", "fontSize": "14px"}}>
-                <input type="checkbox" checked={accommodation} onChange={lambda (e: ChangeEvent) { accommodation = e.target.checked; }}/>I need accommodation provided
-            </label>
-            <button onClick={lambda -> None { save(); }}
-                style={{"marginTop": "14px", "background": PRIMARY, "color": "white", "border": "none", "borderRadius": "10px", "padding": "11px 18px", "fontWeight": "700"}}>Save profile</button>
-            {if saved {
-                <p style={{"color": "#1d8a55", "marginBottom": "0"}}>{saved}</p>
-            }}
-        </div>
-        <div style={CARD}>
-            <div style={LABEL}>How this is used</div>
-            <ul style={{"paddingLeft": "18px", "fontSize": "14px"}}>
-                <li>Occupation and skills set your match score.</li>
-                <li>Destinations and salary decide what is recommended first.</li>
-                <li>Your profile never changes a job's safety assessment.</li>
-                <li>We never ask for your NIC, passport, religion or family details.</li>
-            </ul>
+            <aside className="h-fit rounded-xl bg-ink p-5 text-sm text-ink-foreground">
+                <p className="eyebrow text-sky">How this is used</p>
+                <ul className="mt-3 space-y-2 text-ink-foreground/80">
+                    <li>Occupation and skills set your match score.</li>
+                    <li>Destinations and salary filter what we recommend first.</li>
+                    <li>{"Your profile never changes a job's safety assessment."}</li>
+                    <li>We never ask for your NIC, passport, religion or family details.</li>
+                    <li>Stored only in this browser; sent to the matcher per request, never saved on the server.</li>
+                </ul>
+            </aside>
         </div>
     </div>;
 }

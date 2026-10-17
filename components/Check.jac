@@ -1,11 +1,9 @@
-"""Check an offer: paste -> agent activity -> verdict (layout from the layout-coder design, real backend)."""
+"""Investigate (check an offer), ported from the layout-coder design and driven by the real agent team."""
 
+import from "lucide-react" { Check, Loader2, RotateCcw, FileText, Copy, Landmark, Scale }
 import from agents { Investigate, CaseReport, Step }
 import from rules { RedFlag }
-import from .theme {
-    INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, ACCENT, MUTED, BORDER, RISK, RISK_SOFT, CARD, LABEL,
-    band_label, band_fg, band_bg, trust_color
-}
+import from .ui { risk_of, SafetyIndicator, FindingItem, LiveTag, PageHeader }
 
 glob SAMPLES: list[list[str]] = [
     ["Thailand IT job", "URGENT HIRING!!! IT / Data Entry jobs in THAILAND\nSalary USD 1500 per month + free accommodation + food\nNo experience needed, basic English and typing only.\nAir ticket FREE. Travel on tourist visa, company will change to work visa after arrival.\nOnly 5 seats left - pay Rs. 150,000 processing fee to confirm your seat.\nDeposit to Commercial Bank account 8012345678 (K. Perera). Send slip on WhatsApp +94 76 555 1234"],
@@ -14,20 +12,47 @@ glob SAMPLES: list[list[str]] = [
     ["Genuine offer", "A T C GLOBAL HOLDINGS (PVT) LTD (SLBFE Licence No 3500)\nVacancy: Light vehicle driver - Qatar. Employment visa sponsored by employer.\nSalary QAR 2000 + accommodation. 2-year contract provided before departure.\nAll payments only at our Nugegoda office with official receipt, after you sign the contract.\nCall 0112818268 or email info@atcs.lk"]
 ];
 
-"""The agent roster shown in the activity panel: display name, the step agents that belong to it, what it does."""
-glob ROSTER: list[list[str]] = [
+"""Agent roster: display name, step-agent key, description."""
+glob AGENTS: list[list[str]] = [
     ["Extraction", "Extractor", "Reads salary, visa, fees, agency and licence details"],
     ["Supervisor cross-check", "Supervisor", "Re-reads the text with plain patterns and fixes what the Extractor missed"],
     ["Official verification", "Lead Investigator", "Checks the live SLBFE register, registered contacts and community reports"],
-    ["Duplicate detector", "Duplicate Detector", "Looks for the same ad reposted with different numbers"],
-    ["Specialist review", "expert", "Trafficking, contract and fee experts quote exact language"],
-    ["Independent critique", "Critic", "Drops any claim that is not literally in the offer"],
+    ["Graph investigation", "Duplicate Detector", "Looks for the same ad reposted with different numbers"],
+    ["Contract analysis", "expert", "Trafficking, contract and fee experts quote exact language"],
+    ["Independent critique", "Critic", "Challenges findings and drops any claim not literally in the offer"],
     ["Courtroom", "Prosecutor", "Prosecutor and Defender argue; the Judge decides"],
-    ["Advice", "Advisor", "Drafts questions, next steps and a report"]
+    ["Advice", "Advisor", "Drafts questions and next steps"]
 ];
 
 def steps_for(steps: list[Step], key: str) -> list[Step] {
     return [s for s in steps if key in s.agent];
+}
+
+def finding_kind(source: str) -> str {
+    if "Agent" in source {
+        return "suspected";
+    }
+    if "community" in source {
+        return "allegation";
+    }
+    return "confirmed";
+}
+
+def finding_risk(points: int) -> str {
+    return "critical" if points >= 30 else ("high" if points >= 20 else "moderate");
+}
+
+def verdict_copy(risk: str) -> str {
+    if risk == "low" {
+        return "No serious issues found in the text provided.";
+    }
+    if risk == "moderate" {
+        return "Some concerns. Get answers before you continue.";
+    }
+    if risk == "high" {
+        return "Serious risks. Do not pay until each is resolved.";
+    }
+    return "Do not pay or sign. Multiple critical risks.";
 }
 
 def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
@@ -37,23 +62,26 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
         now: float = 0.0,
         outcome: CaseReport | None = None,
         answers: list[str] = [],
+        sample_i: int = 0,
+        copied: bool = False,
         error: str = "";
 
     can with [busy] entry {
         if busy {
             started = Date.now();
             now = Date.now();
-            timer = setInterval(lambda { now = Date.now(); }, 500);
+            timer = setInterval(lambda { now = Date.now(); }, 400);
             return lambda { clearInterval(timer); };
         }
     }
 
     async def run(extra: list[str]) -> None {
-        if not text.strip() {
-            error = "Paste an offer first.";
+        if len(text.strip()) < 40 {
+            error = "Paste at least a few sentences of the advert or contract.";
             return;
         }
         error = "";
+        copied = False;
         busy = True;
         if not extra {
             outcome = None;
@@ -74,203 +102,178 @@ def:pub CheckOffer(onChecked: Callable[[], None]) -> JsxElement {
         return [f"Q: {q} A: {answers[i] if i < len(answers) else 'unknown'}" for (i, q) in enumerate(qs)];
     }
 
-    stage = int((now - started) / 2800) if busy else 99;
+    def next_sample {
+        text = SAMPLES[sample_i % len(SAMPLES)][1];
+        sample_i = sample_i + 1;
+    }
 
-    return <div style={{"display": "grid", "gridTemplateColumns": "minmax(0, 5fr) minmax(0, 7fr)", "gap": "18px", "alignItems": "start"}}>
-        <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-            <div style={CARD}>
-                <div style={LABEL}>Job advertisement or contract text</div>
-                <textarea id="offer" value={text} rows={9}
-                    onChange={lambda (e: ChangeEvent) { text = e.target.value; }}
-                    placeholder="Paste the WhatsApp message, Facebook post or contract clause you received..."
-                    style={{"width": "100%", "boxSizing": "border-box", "marginTop": "8px", "padding": "12px", "borderRadius": "10px", "border": "1px solid " + BORDER, "fontSize": "14px", "fontFamily": "inherit", "background": "#fbfcfe"}}/>
-                <div style={{"display": "flex", "gap": "6px", "flexWrap": "wrap", "marginTop": "8px"}}>
-                    {[
-                        <button key={i} onClick={lambda -> None { text = smp[1]; }}
-                            style={{"background": MUTED, "border": "1px solid " + BORDER, "borderRadius": "999px", "padding": "4px 10px", "fontSize": "12px", "color": INK, "cursor": "pointer"}}>{smp[0]}</button>
-                        for (i, smp) in enumerate(SAMPLES)
-                    ]}
+    def copy_report {
+        if outcome is not None and outcome.advice is not None {
+            navigator.clipboard.writeText(outcome.advice.report_draft or ("SafeRata report\nRisk: " + outcome.band + "\n\n" + text));
+            copied = True;
+        }
+    }
+
+    stage = int((now - started) / 2600) if busy else 99;
+    all_steps: list[Step] = outcome.steps if outcome is not None else [];
+    done = outcome is not None and outcome.status == "done" and not busy;
+    risk = risk_of(outcome.band, outcome.score) if (outcome is not None and outcome.status == "done") else "low";
+
+    return <div>
+        <PageHeader eyebrow="Trust investigation" title="Check an offer" accent="before you pay.">
+            <LiveTag label="Live agents · official SLBFE register"/>
+        </PageHeader>
+
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+            <div>
+                <label className="eyebrow">Job advertisement or contract text</label>
+                <textarea id="offer" value={text} onChange={lambda (e: ChangeEvent) { text = e.target.value; }} disabled={busy} rows={10}
+                    placeholder="Paste the WhatsApp message, Facebook post or contract clause you received…"
+                    className="mt-2 w-full resize-y rounded-xl border border-input bg-card p-4 font-mono text-sm leading-relaxed shadow-card outline-none focus:border-primary"/>
+                {if error { <p className="mt-2 text-sm font-medium text-risk">{error}</p> }}
+                <div className="mt-3 flex flex-wrap gap-2">
+                    <button id="investigate" onClick={lambda { run([]); }} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60">
+                        {if busy { <Loader2 className="h-4 w-4 animate-spin"/> }} Investigate offer
+                    </button>
+                    <button onClick={lambda -> None { next_sample(); }} disabled={busy} className="h-11 rounded-md border border-border bg-card px-4 text-sm font-semibold">{"Use sample offer: " + SAMPLES[sample_i % len(SAMPLES)][0]}</button>
+                    {if done { <button onClick={lambda -> None { outcome = None; text = ""; }} className="inline-flex h-11 items-center gap-1.5 px-3 text-sm font-semibold text-muted-foreground"><RotateCcw className="h-4 w-4"/> New</button> }}
                 </div>
-                <button id="investigate" disabled={busy} onClick={lambda { run([]); }}
-                    style={{"marginTop": "12px", "width": "100%", "background": PRIMARY, "color": "white", "border": "none", "borderRadius": "10px", "padding": "12px", "fontWeight": "700", "fontSize": "15px", "cursor": "pointer"}}>
-                    {"Agents investigating..." if busy else "Investigate offer"}
-                </button>
-                {if error {
-                    <p style={{"color": RISK, "marginBottom": "0"}}>{error}</p>
-                }}
             </div>
 
-            <div style={CARD}>
-                <div style={LABEL}>Agent activity</div>
+            <ol className="relative rounded-xl border border-border bg-card p-5 shadow-card">
+                <p className="eyebrow mb-4">Agent activity</p>
                 {[
-                    <div key={i} style={{"display": "flex", "gap": "10px", "padding": "9px 0", "borderBottom": "1px solid " + MUTED}}>
-                        <span style={{"width": "22px", "height": "22px", "borderRadius": "999px", "flexShrink": "0", "display": "flex", "alignItems": "center", "justifyContent": "center", "fontSize": "12px", "fontWeight": "700",
-                            "background": (PRIMARY if (busy and i == min(stage, len(ROSTER) - 1)) else (ACCENT if (busy and i < stage) or (not busy and outcome is not None and len(steps_for(outcome.steps, r[1])) > 0) else MUTED)),
-                            "color": ("white" if (busy and i == min(stage, len(ROSTER) - 1)) else PRIMARY_DEEP)}}>
-                            {"✓" if (busy and i < stage) or (not busy and outcome is not None and len(steps_for(outcome.steps, r[1])) > 0) else str(i + 1)}
-                        </span>
-                        <div style={{"minWidth": "0"}}>
-                            <div style={{"fontWeight": "600", "fontSize": "14px"}}>{r[0]}</div>
-                            <div style={{"fontSize": "12px", "color": MUTED_INK}}>
-                                {(steps_for(outcome.steps, r[1])[-1].detail[:120] if (outcome is not None and not busy and len(steps_for(outcome.steps, r[1])) > 0) else r[2])}
-                            </div>
+                    <li key={i} className="relative grid grid-cols-[28px_1fr] gap-3 pb-4 last:pb-0">
+                        {if i < len(AGENTS) - 1 {
+                            <span className={"absolute left-[13px] top-7 h-[calc(100%-20px)] w-px " + ("bg-primary" if (busy and i < stage) or (done and len(steps_for(all_steps, a[1])) > 0) else "bg-border")}></span>
+                        }}
+                        {if (busy and i < stage) or (done and len(steps_for(all_steps, a[1])) > 0) {
+                            <span className="z-10 grid h-7 w-7 place-items-center rounded-md border border-primary bg-primary text-xs text-primary-foreground"><Check className="h-3.5 w-3.5"/></span>
+                        } elif busy and i == min(stage, len(AGENTS) - 1) {
+                            <span className="z-10 grid h-7 w-7 place-items-center rounded-md border border-primary text-xs text-primary"><Loader2 className="h-3.5 w-3.5 animate-spin"/></span>
+                        } else {
+                            <span className="z-10 grid h-7 w-7 place-items-center rounded-md border border-border text-xs text-muted-foreground">{str(i + 1)}</span>
+                        }}
+                        <div>
+                            <p className="flex items-baseline justify-between gap-2 text-sm font-semibold">{a[0]}
+                                {if done and len(steps_for(all_steps, a[1])) > 0 { <span className="font-mono text-[10px] font-normal text-muted-foreground">{f"{len(steps_for(all_steps, a[1]))} step(s) · live"}</span> }}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{steps_for(all_steps, a[1])[-1].detail[:150] if (done and len(steps_for(all_steps, a[1])) > 0) else a[2]}</p>
                         </div>
-                    </div>
-                    for (i, r) in enumerate(ROSTER)
+                    </li>
+                    for (i, a) in enumerate(AGENTS)
                 ]}
+            </ol>
+        </div>
+
+        {if not busy and outcome is not None and outcome.status == "needs_input" {
+            <div className="mt-10 rounded-xl border border-caution/60 bg-caution-soft p-5 rise-in">
+                <h3 className="font-bold">Missing information</h3>
+                <p className="mt-1 text-sm text-muted-foreground">The Lead Investigator paused because a decisive fact is missing.</p>
+                {[
+                    <div key={i} className="mt-3">
+                        <p className="text-sm font-semibold">{"— " + q}</p>
+                        <input value={answers[i] if i < len(answers) else ""}
+                            onChange={lambda (e: ChangeEvent) {
+                                copy = [x for x in answers];
+                                while len(copy) <= i { copy.append(""); }
+                                copy[i] = e.target.value;
+                                answers = copy;
+                            }}
+                            className="mt-1 h-10 w-full rounded-md border border-input bg-card px-3 text-sm"/>
+                    </div>
+                    for (i, q) in enumerate(outcome.questions)
+                ]}
+                <button onClick={lambda { run(answer_pairs()); }} className="mt-4 inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground">Continue investigation</button>
             </div>
-        </div>
+        }}
 
-        <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-            {if outcome is None and not busy {
-                <div style={CARD}>
-                    <div style={LABEL}>Verdict</div>
-                    <h2 style={{"margin": "8px 0 4px", "fontSize": "26px"}}>Check an offer before you pay.</h2>
-                    <p style={{"color": MUTED_INK, "margin": "0"}}>Paste any job offer. The agents verify the agency on the live SLBFE register, compare its contact numbers with the registered ones, search earlier community reports, argue the case for and against, and tell you exactly what to ask before paying anything.</p>
-                </div>
-            }}
-            {if busy {
-                <div style={CARD}>
-                    <div style={LABEL}>Verdict</div>
-                    <p style={{"color": MUTED_INK}}>The agents are working. Every finding will quote the exact words from the offer.</p>
-                </div>
-            }}
-
-            {if not busy and outcome is not None and outcome.status == "needs_input" {
-                <div style={{"background": "#ffffff", "border": "2px solid #c27c0e", "borderRadius": "14px", "padding": "18px"}}>
-                    <div style={LABEL}>Missing information</div>
-                    <p style={{"margin": "6px 0 10px", "color": MUTED_INK}}>The Lead Investigator paused because a decisive fact is missing.</p>
-                    {[
-                        <div key={i} style={{"marginBottom": "10px"}}>
-                            <div style={{"fontWeight": "600"}}>{q}</div>
-                            <input value={answers[i] if i < len(answers) else ""}
-                                onChange={lambda (e: ChangeEvent) {
-                                    copy = [a for a in answers];
-                                    while len(copy) <= i { copy.append(""); }
-                                    copy[i] = e.target.value;
-                                    answers = copy;
-                                }}
-                                style={{"width": "100%", "boxSizing": "border-box", "padding": "9px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "4px"}}/>
-                        </div>
-                        for (i, q) in enumerate(outcome.questions)
-                    ]}
-                    <button onClick={lambda { run(answer_pairs()); }}
-                        style={{"background": "#c27c0e", "color": "white", "border": "none", "borderRadius": "10px", "padding": "10px 16px", "fontWeight": "700"}}>Continue investigation</button>
-                </div>
-            }}
-
-            {if not busy and outcome is not None and outcome.status == "done" {
-                <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-                    <div style={{"background": band_bg(outcome.band), "border": "1px solid " + band_fg(outcome.band), "borderRadius": "14px", "padding": "18px"}}>
-                        <div style={{"display": "flex", "justifyContent": "space-between", "gap": "12px", "flexWrap": "wrap"}}>
-                            <div>
-                                <div style={LABEL}>Verdict</div>
-                                <div id="band" style={{"fontSize": "28px", "fontWeight": "800", "color": band_fg(outcome.band)}}>{band_label(outcome.band)}</div>
-                            </div>
-                            <div style={{"display": "flex", "gap": "22px"}}>
-                                <div><div style={LABEL}>Risk</div><div style={{"fontSize": "24px", "fontWeight": "800"}}>{f"{outcome.score}/100"}</div></div>
-                                <div><div style={LABEL}>Confidence</div><div style={{"fontSize": "24px", "fontWeight": "800"}}>{f"{outcome.confidence}%"}</div></div>
-                            </div>
-                        </div>
-                        <div style={{"background": "rgba(0,0,0,0.08)", "borderRadius": "999px", "height": "8px", "marginTop": "10px"}}>
-                            <div style={{"background": band_fg(outcome.band), "borderRadius": "999px", "height": "8px", "width": f"{outcome.score}%"}}></div>
-                        </div>
-                        <p style={{"margin": "10px 0 0"}}>{outcome.judge}</p>
-                        <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>{f"Official register and rules {outcome.hard_points} pts + agent judgement {outcome.soft_points} pts (capped at 20)"}</div>
+        {if outcome is not None and done {
+            <div className="mt-10 space-y-8 rise-in">
+                <section className={"grid gap-6 rounded-2xl p-7 md:grid-cols-[1fr_auto] " + ("bg-safe-soft" if risk == "low" else ("bg-caution-soft" if risk == "moderate" else "bg-ink text-ink-foreground"))}>
+                    <div>
+                        <p className="eyebrow">Verdict</p>
+                        <h2 className="mt-2 text-3xl font-bold leading-tight md:text-4xl">{verdict_copy(risk)}</h2>
+                        <p className={"mt-3 text-sm " + ("text-ink-foreground/70" if risk in ["high", "critical"] else "text-muted-foreground")}>{outcome.judge}</p>
                     </div>
+                    <dl className="flex gap-8">
+                        <div><dt className="eyebrow">Risk</dt><dd className="mt-2"><SafetyIndicator risk={risk}/></dd><dd className="mt-1 font-mono text-xs">{f"{outcome.score}/100"}</dd></div>
+                        <div><dt className="eyebrow">Confidence</dt><dd className="mt-1 font-display text-3xl font-bold">{f"{outcome.confidence}%"}</dd></div>
+                    </dl>
+                </section>
 
-                    <div style={CARD}>
-                        <div style={LABEL}>{f"Findings ({len(outcome.flags)})"}</div>
-                        {if len(outcome.flags) == 0 {
-                            <p style={{"color": MUTED_INK}}>No supported findings. That is not proof the offer is safe: verify the agency before paying.</p>
+                <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+                    <section>
+                        <h3 className="mb-2 text-lg font-bold">Findings <span className="font-mono text-sm font-normal text-muted-foreground">{str(len(outcome.flags))}</span></h3>
+                        {if len(outcome.flags) > 0 {
+                            <ul className="rounded-xl border border-border bg-card px-4">
+                                {[<FindingItem key={i} title={f"{f.title} (+{f.points})"} risk={finding_risk(f.points)} kind={finding_kind(f.source)} source={f.source + " · " + f.agent} excerpt={f.evidence} why={f.explanation} open_default={i == 0}/> for (i, f) in enumerate(outcome.flags)]}
+                            </ul>
+                        } else {
+                            <p className="text-sm text-muted-foreground">No supported findings. That is not proof the offer is safe.</p>
                         }}
-                        {[
-                            <div key={i} style={{"padding": "12px 0", "borderBottom": "1px solid " + MUTED}}>
-                                <div style={{"display": "flex", "justifyContent": "space-between", "gap": "8px", "flexWrap": "wrap"}}>
-                                    <b>{f.title}</b>
-                                    <span style={{"display": "flex", "gap": "6px", "alignItems": "center"}}>
-                                        <span style={{"background": trust_color(f.source), "color": "white", "borderRadius": "6px", "padding": "1px 7px", "fontSize": "11px"}}>{f.source}</span>
-                                        <span style={{"fontSize": "12px", "color": MUTED_INK}}>{f"+{f.points}"}</span>
-                                    </span>
-                                </div>
-                                <div style={{"borderLeft": "3px solid " + RISK, "background": RISK_SOFT, "padding": "6px 10px", "margin": "6px 0", "fontStyle": "italic", "fontSize": "14px"}}>{"\"" + f.evidence + "\""}</div>
-                                <div style={{"fontSize": "14px", "color": MUTED_INK}}>{f.explanation}</div>
-                            </div>
-                            for (i, f) in enumerate(outcome.flags)
-                        ]}
                         {if len(outcome.removed) > 0 {
-                            <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "8px"}}>{f"Independent critique removed {len(outcome.removed)} unsupported claim(s): " + "; ".join(outcome.removed)}</div>
+                            <p className="mt-2 text-xs text-muted-foreground">{f"Independent critique removed {len(outcome.removed)} unsupported claim(s): " + "; ".join(outcome.removed)}</p>
                         }}
-                    </div>
-
-                    <div style={{"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px"}}>
-                        <div style={CARD}>
-                            <div style={LABEL}>Extracted evidence</div>
+                        <p className="mt-2 font-mono text-[11px] text-muted-foreground">{f"Official register & rules {outcome.hard_points} pts + agent judgement {outcome.soft_points} pts (capped at 20)"}</p>
+                    </section>
+                    <section className="space-y-6">
+                        <div className="rounded-xl border border-border bg-card p-5">
+                            <h3 className="font-bold">Extracted evidence</h3>
                             {if outcome.facts is not None {
-                                <table style={{"width": "100%", "fontSize": "14px", "marginTop": "6px", "borderCollapse": "collapse"}}><tbody>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Job</td><td>{(outcome.facts.job_title or "not stated") + (" - " + outcome.facts.country if outcome.facts.country else "")}</td></tr>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Salary</td><td>{f"{outcome.facts.salary_amount:,.0f} {outcome.facts.salary_currency}" if outcome.facts.salary_amount > 0 else "not stated"}</td></tr>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Visa</td><td>{outcome.facts.visa_type or "not stated"}</td></tr>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Fees</td><td>{", ".join([f"{x.label} {x.amount:,.0f} {x.currency}" for x in outcome.facts.fees]) or "none found"}</td></tr>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Agency</td><td>{outcome.facts.agency_name or "not named"}</td></tr>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Licence</td><td>{outcome.facts.licence_no or "not printed"}</td></tr>
-                                    <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Contacts</td><td>{", ".join(outcome.facts.phones + outcome.facts.emails) or "none"}</td></tr>
-                                </tbody></table>
+                                <dl className="mt-3 divide-y divide-border text-sm">
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Job</dt><dd className="text-right font-mono text-xs">{(outcome.facts.job_title or "Unavailable") + (" · " + outcome.facts.country if outcome.facts.country else "")}</dd></div>
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Salary</dt><dd className="text-right font-mono text-xs">{f"{outcome.facts.salary_currency} {outcome.facts.salary_amount:,.0f}" if outcome.facts.salary_amount > 0 else "Unavailable"}</dd></div>
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Visa</dt><dd className="text-right font-mono text-xs">{outcome.facts.visa_type or "Unavailable"}</dd></div>
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Fee requested</dt><dd className="text-right font-mono text-xs">{", ".join([f"{x.currency} {x.amount:,.0f}" for x in outcome.facts.fees]) or "Unavailable"}</dd></div>
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Licence</dt><dd className="text-right font-mono text-xs">{outcome.facts.licence_no or "Unavailable"}</dd></div>
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Agency</dt><dd className="text-right font-mono text-xs">{outcome.facts.agency_name or "Unavailable"}</dd></div>
+                                    <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Contacts</dt><dd className="text-right font-mono text-xs">{", ".join(outcome.facts.phones + outcome.facts.emails) or "Unavailable"}</dd></div>
+                                </dl>
                             }}
                         </div>
-                        <div style={CARD}>
-                            <div style={LABEL}>SLBFE register (live)</div>
+                        <div className="rounded-xl border border-border bg-card p-5">
+                            <h3 className="flex items-center gap-2 font-bold"><Landmark className="h-4 w-4 text-primary"/> SLBFE register</h3>
                             {if outcome.agency is not None {
-                                <div style={{"fontSize": "14px", "marginTop": "6px"}}>
-                                    <div style={{"fontWeight": "700"}}>{outcome.agency.name}</div>
-                                    <div>{f"Licence {outcome.agency.licence_no}, valid until {outcome.agency.valid_upto}"}</div>
-                                    <div style={{"color": MUTED_INK}}>{"Registered phones: " + ", ".join(outcome.agency.phones)}</div>
-                                    <div style={{"marginTop": "6px", "fontWeight": "600", "color": PRIMARY_DEEP}}>{"Status: " + outcome.register_status}</div>
+                                <div className="mt-2 text-sm">
+                                    <p className="font-semibold">{outcome.agency.name}</p>
+                                    <p className="font-mono text-xs text-muted-foreground">{f"Licence {outcome.agency.licence_no} · valid until {outcome.agency.valid_upto}"}</p>
+                                    <p className="mt-1 font-mono text-xs text-muted-foreground">{"Registered: " + ", ".join(outcome.agency.phones)}</p>
                                 </div>
-                            } else {
-                                <div style={{"fontSize": "14px", "marginTop": "6px"}}>{"Status: " + (outcome.register_status or "not checked")}</div>
                             }}
-                            {if outcome.alerts_sent > 0 {
-                                <div style={{"marginTop": "8px", "fontSize": "13px", "color": "#7c3aed"}}>{f"Network Guardian warned {outcome.alerts_sent} earlier check(s) sharing a contact."}</div>
-                            }}
+                            <p className="mt-2 eyebrow">{"Status: " + (outcome.register_status or "not checked")}</p>
+                            {if outcome.alerts_sent > 0 { <p className="mt-2 text-xs font-semibold text-primary-deep">{f"Network Guardian warned {outcome.alerts_sent} earlier check(s)."}</p> }}
                         </div>
-                    </div>
-
-                    {if outcome.advice is not None {
-                        <div style={{"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px"}}>
-                            <div style={CARD}>
-                                <div style={LABEL}>Ask before paying or signing</div>
-                                <ul style={{"paddingLeft": "18px", "fontSize": "14px"}}>{[<li key={i} style={{"marginBottom": "4px"}}>{q}</li> for (i, q) in enumerate(outcome.advice.questions_to_ask)]}</ul>
-                            </div>
-                            <div style={CARD}>
-                                <div style={LABEL}>Next steps</div>
-                                <ul style={{"paddingLeft": "18px", "fontSize": "14px"}}>{[<li key={i} style={{"marginBottom": "4px"}}>{s}</li> for (i, s) in enumerate(outcome.advice.next_steps)]}</ul>
-                            </div>
-                        </div>
-                    }}
-
-                    <div style={CARD}>
-                        <div style={LABEL}>Courtroom</div>
-                        <div style={{"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px", "marginTop": "8px", "fontSize": "14px"}}>
-                            <div style={{"background": RISK_SOFT, "borderRadius": "10px", "padding": "10px"}}><b>Prosecutor</b><p style={{"margin": "4px 0 0"}}>{outcome.prosecution}</p></div>
-                            <div style={{"background": "#e5f5ec", "borderRadius": "10px", "padding": "10px"}}><b>Defender</b><p style={{"margin": "4px 0 0"}}>{outcome.defence}</p></div>
-                        </div>
-                    </div>
-
-                    {if outcome.advice is not None and outcome.advice.report_draft {
-                        <details style={CARD}>
-                            <summary style={{"cursor": "pointer", "fontWeight": "700"}}>Draft report to SLBFE (1989)</summary>
-                            <pre style={{"whiteSpace": "pre-wrap", "fontFamily": "inherit", "fontSize": "14px", "background": MUTED, "padding": "12px", "borderRadius": "10px"}}>{outcome.advice.report_draft}</pre>
-                        </details>
-                    }}
-
-                    <details style={CARD}>
-                        <summary style={{"cursor": "pointer", "fontWeight": "700"}}>{f"Full agent log ({len(outcome.steps)} steps) and sources"}</summary>
-                        <ol style={{"fontSize": "13px", "paddingLeft": "18px"}}>{[<li key={i} style={{"marginBottom": "4px"}}><b>{s.agent}</b>{" · " + s.action + ": " + s.detail}</li> for (i, s) in enumerate(outcome.steps)]}</ol>
-                        <ul style={{"fontSize": "13px", "paddingLeft": "18px"}}>{[<li key={i}><b>{src.name}</b>{": " + src.detail}</li> for (i, src) in enumerate(outcome.sources)]}</ul>
-                    </details>
+                    </section>
                 </div>
-            }}
-        </div>
+
+                <section className="grid gap-6 rounded-2xl border border-border bg-card p-6 shadow-card md:grid-cols-2">
+                    <div><p className="eyebrow flex items-center gap-1"><Scale className="h-3 w-3"/> Prosecutor</p><p className="mt-2 text-sm">{outcome.prosecution}</p></div>
+                    <div><p className="eyebrow flex items-center gap-1"><Scale className="h-3 w-3"/> Defender</p><p className="mt-2 text-sm">{outcome.defence}</p></div>
+                </section>
+
+                {if outcome.advice is not None {
+                    <section className="grid gap-6 border-t border-border pt-8 md:grid-cols-2">
+                        <div>
+                            <h3 className="text-lg font-bold">Ask before paying or signing</h3>
+                            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">{[<li key={k}>{q}</li> for (k, q) in enumerate(outcome.advice.questions_to_ask)]}</ol>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold">Next steps</h3>
+                            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">{[<li key={k}>{s}</li> for (k, s) in enumerate(outcome.advice.next_steps)]}</ul>
+                            <button onClick={lambda -> None { copy_report(); }} className="mt-4 inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-semibold">
+                                <FileText className="h-4 w-4"/> {"Report copied" if copied else "Draft report to SLBFE (1989)"} <Copy className="h-3.5 w-3.5 text-muted-foreground"/>
+                            </button>
+                        </div>
+                    </section>
+                }}
+
+                <details className="rounded-xl border border-border bg-card p-5 text-sm">
+                    <summary className="cursor-pointer font-semibold">{f"Full agent log ({len(outcome.steps)} steps) and sources"}</summary>
+                    <ol className="mt-3 list-decimal space-y-1 pl-5 font-mono text-xs">{[<li key={k}><span className="font-semibold">{s.agent}</span>{" · " + s.action + ": " + s.detail}</li> for (k, s) in enumerate(outcome.steps)]}</ol>
+                    <ul className="mt-3 space-y-1 text-xs text-muted-foreground">{[<li key={k}><span className="font-semibold text-foreground">{src.name}</span>{": " + src.detail}</li> for (k, src) in enumerate(outcome.sources)]}</ul>
+                </details>
+            </div>
+        }}
     </div>;
 }

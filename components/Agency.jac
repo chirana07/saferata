@@ -1,80 +1,64 @@
-"""Agency portal: post a listing -> live SLBFE licence gate -> full agent analysis before it appears on Discover."""
+"""Agency portal, ported from the layout-coder design: live SLBFE licence gate + full agent analysis + appeals."""
 
+import from "lucide-react" { Check, X, Upload, AlertTriangle, Loader2 }
 import from jobboard { PostJob, AppealFinding, PostResult, JobView }
 import from agents { Step }
-import from .theme { INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, ACCENT, MUTED, BORDER, RISK, CARD, LABEL, band_label, band_fg, band_bg }
-import from .Discover { NotBuilt }
+import from .ui { risk_of, SafetyIndicator, VerifyBadge, LiveTag, PageHeader }
 
-def has_any(text: str, words: list[str]) -> bool {
-    low = text.lower();
-    return any([w in low for w in words]);
-}
+glob INPUT = "mt-1 h-10 w-full rounded-md border border-input bg-card px-3 text-sm font-normal focus:border-primary";
 
 def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
-    has title: str = "",
+    has role: str = "",
         country: str = "",
         salary: str = "",
-        description: str = "",
+        currency: str = "QAR",
+        fee: str = "",
+        deductions: str = "",
+        deduction_total: str = "",
+        visa: str = "Employment visa",
+        contract_months: str = "24",
+        contract_type: str = "Fixed term",
+        accommodation: str = "",
+        occupation: str = "",
+        experience: str = "0",
         licence_no: str = "",
         contact_phone: str = "",
-        occupation: str = "",
-        experience_years: str = "0",
-        contract_type: str = "Fixed term",
-        contract_months: str = "24",
-        accommodation: str = "",
-        deductions: str = "",
-        monthly_deductions: str = "0",
-        worker_fee_lkr: str = "0",
-        appeal_job: str = "",
-        appeal_finding: str = "",
-        appeal_text: str = "",
-        appeal_evidence: str = "",
-        appealing: bool = False,
+        notes: str = "",
+        files: list[str] = [],
         posting: bool = False,
         message: str = "",
         last_steps: list[Step] = [],
-        mine: list[JobView] = [];
+        mine: list[JobView] = [],
+        appeal_job: str = "",
+        appeal_finding: str = "",
+        appeal_text: str = "",
+        appealing: bool = False;
 
     def fill_sample {
-        title = "Factory Machine Operator";
+        role = "Factory machine operator";
         country = "Malaysia";
-        salary = "MYR 1,700 + overtime";
-        description = "Employment visa. Free accommodation. 2-year contract. Pay Rs. 200,000 service charge to our officer's account before medical. Passport will be kept by the company for safety.";
+        salary = "1700";
+        currency = "MYR";
+        fee = "200000";
+        deductions = "Levy 60, food 150";
+        deduction_total = "210";
+        visa = "Employment visa";
+        contract_months = "24";
+        accommodation = "Free shared hostel";
+        occupation = "Manufacturing";
         licence_no = "3500";
         contact_phone = "0765551234";
-        occupation = "Manufacturing";
-        experience_years = "0";
-        accommodation = "Free shared hostel";
-        deductions = "Levy MYR 60, food MYR 150";
-        monthly_deductions = "210";
-        worker_fee_lkr = "200000";
-    }
-
-    async def appeal -> None {
-        appealing = True;
-        result = root spawn AppealFinding(job_id=appeal_job, finding=appeal_finding, explanation=appeal_text, evidence=appeal_evidence);
-        if result.reports {
-            r: PostResult = result.reports[0];
-            message = r.message;
-            last_steps = r.steps;
-            if r.job is not None {
-                updated: JobView = r.job;
-                mine = [updated if x.id == updated.id else x for x in mine];
-            }
-        }
-        appeal_job = "";
-        appeal_text = "";
-        appeal_evidence = "";
-        appealing = False;
+        notes = "Pay the Rs. 200,000 service charge to our officer's account before medical. Passport will be kept by the company for safety.";
     }
 
     async def submit -> None {
         posting = True;
-        message = "Gatekeeper is checking the licence on the live SLBFE register, then the agent team analyses the listing...";
+        message = "";
         last_steps = [];
-        result = root spawn PostJob(title=title, country=country, salary=salary, description=description, licence_no=licence_no, contact_phone=contact_phone,
-            occupation=occupation, experience_years=int(experience_years or "0"), contract_type=contract_type, contract_months=int(contract_months or "0"),
-            accommodation=accommodation, deductions=deductions, monthly_deductions=float(monthly_deductions or "0"), worker_fee_lkr=float(worker_fee_lkr or "0"));
+        desc = f"{visa}. {contract_type} contract, {contract_months} months. Accommodation: {accommodation or 'not stated'}. Deductions: {deductions or 'none'}. Worker fee: Rs. {fee or '0'}. {notes}";
+        result = root spawn PostJob(title=role, country=country, salary=f"{currency} {salary}", description=desc, licence_no=licence_no, contact_phone=contact_phone,
+            occupation=occupation, experience_years=int(experience or "0"), contract_type=contract_type, contract_months=int(contract_months or "0"),
+            accommodation=accommodation, deductions=deductions, monthly_deductions=float(deduction_total or "0"), worker_fee_lkr=float(fee or "0"));
         if result.reports {
             r: PostResult = result.reports[0];
             message = r.message;
@@ -87,107 +71,135 @@ def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
         posting = False;
     }
 
-    checks: list[list[str]] = [
-        ["Role and destination", "yes" if title and country else ""],
-        ["Basic salary stated", "yes" if salary else ""],
-        ["Employment visa (not tourist)", "yes" if has_any(description, ["employment visa", "work visa", "work permit"]) and not has_any(description, ["tourist visa", "visit visa"]) else ""],
-        ["Contract duration", "yes" if has_any(description, ["contract", "year"]) else ""],
-        ["Accommodation disclosed", "yes" if accommodation or has_any(description, ["accommodation", "housing"]) else ""],
-        ["Deductions disclosed", "yes" if deductions else ""],
-        ["Worker fee disclosed", "yes" if worker_fee_lkr != "" else ""]
-    ];
-    done = len([c for c in checks if c[1]]);
-    inp = {"width": "100%", "boxSizing": "border-box", "padding": "9px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "4px", "fontFamily": "inherit"};
+    async def appeal -> None {
+        appealing = True;
+        result = root spawn AppealFinding(job_id=appeal_job, finding=appeal_finding, explanation=appeal_text, evidence="");
+        if result.reports {
+            r: PostResult = result.reports[0];
+            message = r.message;
+            last_steps = r.steps;
+            if r.job is not None {
+                updated: JobView = r.job;
+                mine = [updated if x.id == updated.id else x for x in mine];
+            }
+        }
+        appeal_job = "";
+        appeal_text = "";
+        appealing = False;
+    }
 
-    return <div style={{"display": "grid", "gridTemplateColumns": "minmax(0, 7fr) minmax(0, 5fr)", "gap": "18px", "alignItems": "start"}}>
-        <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-            <div>
-                <h1 style={{"fontSize": "30px", "margin": "0 0 4px"}}>Agency portal</h1>
-                <p style={{"color": MUTED_INK, "margin": "0"}}>Only agencies on the live SLBFE register can publish. Every listing is investigated by the agent team before workers see it.</p>
-            </div>
-            <div style={CARD}>
-                <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center"}}>
-                    <div style={LABEL}>New listing</div>
-                    <button onClick={lambda -> None { fill_sample(); }} style={{"background": MUTED, "border": "1px solid " + BORDER, "borderRadius": "999px", "padding": "4px 10px", "fontSize": "12px"}}>Fill sample</button>
-                </div>
-                <div style={{"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px", "marginTop": "8px"}}>
-                    <label style={{"fontSize": "13px"}}>Role<input value={title} onChange={lambda (e: ChangeEvent) { title = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Destination country<input value={country} onChange={lambda (e: ChangeEvent) { country = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Basic salary (with currency)<input value={salary} onChange={lambda (e: ChangeEvent) { salary = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>SLBFE licence number<input value={licence_no} onChange={lambda (e: ChangeEvent) { licence_no = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Contact phone<input value={contact_phone} onChange={lambda (e: ChangeEvent) { contact_phone = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Occupation group<input value={occupation} onChange={lambda (e: ChangeEvent) { occupation = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Experience required (years)<input value={experience_years} onChange={lambda (e: ChangeEvent) { experience_years = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Contract type
-                        <select value={contract_type} onChange={lambda (e: ChangeEvent) { contract_type = e.target.value; }} style={inp}>
-                            <option value="Fixed term">Fixed term</option><option value="Renewable">Renewable</option><option value="Seasonal">Seasonal</option>
-                        </select>
+    def pick_files(e: ChangeEvent) {
+        names: list[str] = [];
+        fl: any = e.target.files;
+        count: int = int(fl.length) if fl else 0;
+        for i in range(count) {
+            names.append(str(fl[i].name));
+        }
+        files = names;
+    }
+
+    checks: list[list[str]] = [
+        ["Role and destination", "ok" if role and country else ""],
+        ["Basic salary stated", "ok" if salary else ""],
+        ["Employment visa (not tourist)", "ok" if visa and "tourist" not in visa.lower() and "visit" not in visa.lower() else ""],
+        ["Contract duration", "ok" if contract_months and contract_months != "0" else ""],
+        ["Accommodation disclosed", "ok" if accommodation else ""],
+        ["Worker fee disclosed", "ok" if fee != "" else ""],
+        ["SLBFE licence number", "ok" if licence_no else ""],
+        ["Supporting document attached", "ok" if len(files) > 0 else ""]
+    ];
+
+    return <div>
+        <PageHeader eyebrow="Agency portal" title="Publish a verified listing">
+            <div className="text-right text-sm"><p className="font-mono">{licence_no or "Licence checked on submit"}</p><div className="mt-1 flex items-center justify-end gap-2"><LiveTag label="Live SLBFE gate"/></div></div>
+        </PageHeader>
+        <div className="grid gap-8 lg:grid-cols-[1.5fr_1fr]">
+            <div className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-card">
+                <div className="flex items-center justify-between"><h2 className="text-xl font-bold">New listing</h2><button onClick={lambda -> None { fill_sample(); }} className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold">Fill sample</button></div>
+                <fieldset className="grid gap-4 sm:grid-cols-2"><legend className="eyebrow mb-2">Agency</legend>
+                    <label className="block text-xs font-semibold">SLBFE licence number<input value={licence_no} onChange={lambda (e: ChangeEvent) { licence_no = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Contact phone<input value={contact_phone} onChange={lambda (e: ChangeEvent) { contact_phone = e.target.value; }} className={INPUT}/></label>
+                </fieldset>
+                <fieldset className="grid gap-4 sm:grid-cols-2"><legend className="eyebrow mb-2">Role</legend>
+                    <label className="block text-xs font-semibold">Job title<input value={role} onChange={lambda (e: ChangeEvent) { role = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Destination country<input value={country} onChange={lambda (e: ChangeEvent) { country = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Occupation group<input value={occupation} onChange={lambda (e: ChangeEvent) { occupation = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Experience required (years)<input value={experience} onChange={lambda (e: ChangeEvent) { experience = e.target.value; }} className={INPUT}/></label>
+                </fieldset>
+                <fieldset className="grid gap-4 sm:grid-cols-3"><legend className="eyebrow mb-2">Pay</legend>
+                    <label className="block text-xs font-semibold">Basic monthly salary<input type="number" value={salary} onChange={lambda (e: ChangeEvent) { salary = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Currency<select value={currency} onChange={lambda (e: ChangeEvent) { currency = e.target.value; }} className={INPUT}>{[<option key={c} value={c}>{c}</option> for c in ["QAR", "SAR", "AED", "KWD", "OMR", "MYR", "JPY", "KRW", "USD"]]}</select></label>
+                    <label className="block text-xs font-semibold">Fee charged to worker (LKR)<input type="number" value={fee} onChange={lambda (e: ChangeEvent) { fee = e.target.value; }} className={INPUT}/></label>
+                    <div className="sm:col-span-2"><label className="block text-xs font-semibold">Deductions (e.g. food 200, transport 0)<input value={deductions} onChange={lambda (e: ChangeEvent) { deductions = e.target.value; }} className={INPUT}/></label></div>
+                    <label className="block text-xs font-semibold">Total deductions / month<input type="number" value={deduction_total} onChange={lambda (e: ChangeEvent) { deduction_total = e.target.value; }} className={INPUT}/></label>
+                </fieldset>
+                <fieldset className="grid gap-4 sm:grid-cols-3"><legend className="eyebrow mb-2">Visa, contract & housing</legend>
+                    <label className="block text-xs font-semibold">Visa category<input value={visa} onChange={lambda (e: ChangeEvent) { visa = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">Contract type<select value={contract_type} onChange={lambda (e: ChangeEvent) { contract_type = e.target.value; }} className={INPUT}><option value="Fixed term">Fixed term</option><option value="Renewable">Renewable</option><option value="Seasonal">Seasonal</option></select></label>
+                    <label className="block text-xs font-semibold">Contract duration (months)<input value={contract_months} onChange={lambda (e: ChangeEvent) { contract_months = e.target.value; }} className={INPUT}/></label>
+                    <div className="sm:col-span-3"><label className="block text-xs font-semibold">Accommodation<input value={accommodation} onChange={lambda (e: ChangeEvent) { accommodation = e.target.value; }} className={INPUT}/></label></div>
+                    <div className="sm:col-span-3"><label className="block text-xs font-semibold">Other terms (fees, payment, documents)<textarea rows={3} value={notes} onChange={lambda (e: ChangeEvent) { notes = e.target.value; }} className="mt-1 w-full rounded-md border border-input bg-card p-3 text-sm font-normal"/></label></div>
+                </fieldset>
+                <div>
+                    <p className="eyebrow mb-2">Documents</p>
+                    <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-muted/50 px-4 py-6 text-center text-sm hover:border-primary">
+                        <Upload className="h-5 w-5 text-muted-foreground"/>
+                        <span><b>Choose files</b> — demand letter, contract template</span>
+                        <span className="text-xs text-muted-foreground">Only file names are kept: document upload and analysis are not built yet.</span>
+                        <input type="file" multiple={True} className="sr-only" onChange={pick_files}/>
                     </label>
-                    <label style={{"fontSize": "13px"}}>Contract length (months)<input value={contract_months} onChange={lambda (e: ChangeEvent) { contract_months = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Accommodation<input value={accommodation} onChange={lambda (e: ChangeEvent) { accommodation = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Deductions (what for)<input value={deductions} onChange={lambda (e: ChangeEvent) { deductions = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Monthly deductions (salary currency)<input value={monthly_deductions} onChange={lambda (e: ChangeEvent) { monthly_deductions = e.target.value; }} style={inp}/></label>
-                    <label style={{"fontSize": "13px"}}>Recruitment fee charged to the worker (LKR)<input value={worker_fee_lkr} onChange={lambda (e: ChangeEvent) { worker_fee_lkr = e.target.value; }} style={inp}/></label>
+                    {if len(files) > 0 { <ul className="mt-2 text-xs">{[<li key={n} className="font-mono">{"· " + n}</li> for n in files]}</ul> }}
                 </div>
-                <label style={{"fontSize": "13px", "display": "block", "marginTop": "10px"}}>Visa, contract, housing and fees
-                    <textarea rows={4} value={description} onChange={lambda (e: ChangeEvent) { description = e.target.value; }} style={inp}/>
-                </label>
-                <div style={{"marginTop": "10px"}}><NotBuilt label="Document upload (demand letter, contract)"/></div>
-                <button disabled={posting} onClick={lambda { submit(); }}
-                    style={{"marginTop": "12px", "width": "100%", "background": PRIMARY, "color": "white", "border": "none", "borderRadius": "10px", "padding": "12px", "fontWeight": "700"}}>
-                    {"Verifying licence and analysing..." if posting else "Submit for verification"}
-                </button>
+                <p className="text-xs text-muted-foreground">The licence is checked live on the SLBFE register, then the full agent team analyses the listing before workers see it.</p>
+                <button disabled={posting} onClick={lambda { submit(); }} className="inline-flex h-11 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60">{if posting { <Loader2 className="h-4 w-4 animate-spin"/> }} Submit for verification</button>
                 {if message {
-                    <div style={{"marginTop": "12px", "fontSize": "13px", "background": ACCENT, "borderRadius": "10px", "padding": "10px"}}>
-                        <b>{message}</b>
-                        <ol style={{"paddingLeft": "18px", "marginBottom": "0"}}>{[<li key={i}><b>{s.agent}</b>{" · " + s.action + ": " + s.detail[:140]}</li> for (i, s) in enumerate(last_steps)]}</ol>
+                    <div className="rounded-md bg-secondary p-3 text-xs">
+                        <p className="font-semibold text-primary-deep">{message}</p>
+                        <ol className="mt-1 list-decimal space-y-0.5 pl-4">{[<li key={k}><span className="font-semibold">{s.agent}</span>{" · " + s.action + ": " + s.detail[:140]}</li> for (k, s) in enumerate(last_steps)]}</ol>
                     </div>
                 }}
             </div>
-        </div>
-        <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-            <div style={CARD}>
-                <div style={LABEL}>{f"Pre-publication checklist ({done}/{len(checks)})"}</div>
-                {[
-                    <div key={i} style={{"display": "flex", "gap": "8px", "padding": "6px 0", "fontSize": "14px"}}>
-                        <span style={{"color": "#1d8a55" if c[1] else "#b7bfd0", "fontWeight": "800"}}>{"✓" if c[1] else "○"}</span>{c[0]}
-                    </div>
-                    for (i, c) in enumerate(checks)
-                ]}
-                <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>Computed in the browser from what you typed. The agent team runs the real analysis on submit.</div>
-            </div>
-            <div style={CARD}>
-                <div style={LABEL}>Your listings (this session)</div>
-                {if len(mine) == 0 {
-                    <p style={{"color": MUTED_INK, "fontSize": "14px"}}>No listings submitted yet.</p>
-                }}
-                {[
-                    <div key={j.id} style={{"padding": "8px 0", "borderBottom": "1px solid " + MUTED}}>
-                        <div style={{"display": "flex", "justifyContent": "space-between", "gap": "8px"}}>
-                            <b>{j.title + " · " + j.country}</b>
-                            <span style={{"background": band_bg(j.band), "color": band_fg(j.band), "borderRadius": "999px", "padding": "2px 9px", "fontSize": "12px", "fontWeight": "700"}}>{f"{band_label(j.band)} {j.score}"}</span>
-                        </div>
-                        <div style={{"fontSize": "12px", "color": MUTED_INK}}>{"; ".join(j.top_flags) or "No findings"}</div>
-                        {[<div key={k} style={{"fontSize": "12px", "color": PRIMARY_DEEP, "marginTop": "4px"}}>{"Appeal " + ap}</div> for (k, ap) in enumerate(j.appeals)]}
-                        {if len(j.appealable) > 0 and appeal_job != j.id {
-                            <button onClick={lambda -> None { appeal_job = j.id; appeal_finding = j.appealable[0]; }}
-                                style={{"marginTop": "6px", "background": MUTED, "border": "1px solid " + BORDER, "borderRadius": "8px", "padding": "4px 10px", "fontSize": "12px"}}>Dispute a finding</button>
-                        }}
-                        {if appeal_job == j.id {
-                            <div style={{"marginTop": "8px", "display": "flex", "flexDirection": "column", "gap": "6px"}}>
-                                <select value={appeal_finding} onChange={lambda (e: ChangeEvent) { appeal_finding = e.target.value; }} style={inp}>
-                                    {[<option key={k} value={f}>{f}</option> for (k, f) in enumerate(j.appealable)]}
-                                </select>
-                                <textarea rows={2} placeholder="Explain why the finding is wrong or what you changed" value={appeal_text} onChange={lambda (e: ChangeEvent) { appeal_text = e.target.value; }} style={inp}/>
-                                <input placeholder="Evidence (receipt number, contract clause...)" value={appeal_evidence} onChange={lambda (e: ChangeEvent) { appeal_evidence = e.target.value; }} style={inp}/>
-                                <button disabled={appealing} onClick={lambda { appeal(); }}
-                                    style={{"background": PRIMARY, "color": "white", "border": "none", "borderRadius": "8px", "padding": "7px", "fontWeight": "700"}}>{"Appeal Reviewer deciding..." if appealing else "Send appeal"}</button>
-                            </div>
-                        }}
-                    </div>
-                    for j in mine
-                ]}
-                <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "8px"}}>Only agent-judgement findings can be appealed. Official register and rule findings are resolved with the SLBFE.</div>
+            <div className="space-y-6">
+                <section className="rounded-xl border border-border bg-card p-5">
+                    <h2 className="font-bold">Pre-publication checklist</h2>
+                    <ul className="mt-3 space-y-2 text-sm">{[<li key={c[0]} className="flex items-center gap-2">{if c[1] { <Check className="h-4 w-4 text-safe"/> } else { <X className="h-4 w-4 text-muted-foreground"/> }}<span className={"" if c[1] else "text-muted-foreground"}>{c[0]}</span></li> for c in checks]}</ul>
+                </section>
+                <section className="rounded-xl border border-border bg-card p-5">
+                    <h2 className="font-bold">Your listings</h2>
+                    {if len(mine) == 0 {
+                        <p className="mt-2 text-sm text-muted-foreground">No listings submitted in this session.</p>
+                    } else {
+                        <ul className="mt-3 divide-y divide-border">
+                            {[
+                                <li key={j.id} className="py-3 text-sm">
+                                    <div className="flex items-start justify-between gap-2"><span className="font-semibold">{j.title + " · " + j.country}</span><SafetyIndicator risk={risk_of(j.band, j.score)} compact={True}/></div>
+                                    <p className="font-mono text-xs text-muted-foreground">{f"{j.salary} · fee LKR {j.worker_fee_lkr:,.0f} · {j.score}/100"}</p>
+                                    {[<p key={k} className="mt-1 text-xs font-semibold text-primary-deep">{"Appeal " + ap}</p> for (k, ap) in enumerate(j.appeals)]}
+                                    {if len(j.appealable) > 0 {
+                                        <div className="mt-2 rounded-md bg-caution-soft p-3 text-xs">
+                                            <p className="flex items-center gap-1 font-semibold"><AlertTriangle className="h-3.5 w-3.5"/>{f" {len(j.appealable)} agent finding(s) can be disputed"}</p>
+                                            {if appeal_job == j.id {
+                                                <div className="mt-2 space-y-2">
+                                                    <select value={appeal_finding} onChange={lambda (e: ChangeEvent) { appeal_finding = e.target.value; }} className="h-9 w-full rounded border border-input bg-card px-2">{[<option key={k} value={f}>{f}</option> for (k, f) in enumerate(j.appealable)]}</select>
+                                                    <textarea value={appeal_text} onChange={lambda (e: ChangeEvent) { appeal_text = e.target.value; }} rows={2} placeholder="Explain and reference evidence…" className="w-full rounded border border-input bg-card p-2"/>
+                                                    <button disabled={appealing} onClick={lambda { appeal(); }} className="rounded bg-ink px-3 py-1.5 font-semibold text-ink-foreground">{"Appeal Reviewer deciding..." if appealing else "Send appeal"}</button>
+                                                </div>
+                                            } else {
+                                                <button onClick={lambda -> None { appeal_job = j.id; appeal_finding = j.appealable[0]; }} className="mt-1 font-semibold text-primary-deep underline">Dispute this finding</button>
+                                            }}
+                                        </div>
+                                    }}
+                                </li>
+                                for j in mine
+                            ]}
+                        </ul>
+                    }}
+                    <p className="mt-3 text-xs text-muted-foreground">Only agent-judgement findings can be appealed. Official register and rule findings are resolved with the SLBFE.</p>
+                </section>
+                <section className="rounded-xl border border-border bg-card p-5 text-sm">
+                    <h2 className="font-bold">Status legend</h2>
+                    <div className="mt-3 flex flex-wrap gap-2">{[<VerifyBadge key={s} state={s}/> for s in ["verified", "expired", "rejected", "unverified"]]}</div>
+                </section>
             </div>
         </div>
     </div>;
