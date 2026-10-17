@@ -149,6 +149,10 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
     }
 
     async def submit_review -> None {
+        if len(review_text.strip()) < 10 {
+            message = "Please provide more details in your report (at least 10 characters).";
+            return;
+        }
         reviewing = True;
         result = root spawn AddReview(job_id=open_id, author=review_author, kind=review_kind, text=review_text, evidence=review_evidence);
         if result.reports {
@@ -163,6 +167,9 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
     }
 
     async def respond -> None {
+        if not respond_text.strip() {
+            return;
+        }
         result = root spawn RespondToReview(review_id=respond_id, response=respond_text);
         if result.reports {
             r: PostResult = result.reports[0];
@@ -174,6 +181,10 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
     }
 
     async def request_correction -> None {
+        if len(correction.strip()) < 5 {
+            message = "Please describe what is wrong in the listing (at least 5 characters).";
+            return;
+        }
         result = root spawn RequestCorrection(job_id=open_id, details=correction);
         if result.reports {
             r: PostResult = result.reports[0];
@@ -211,6 +222,8 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
         and (expv < 0 or j.experience_years <= expv) and (not ctype or j.contract_type == ctype)];
     if sort == "salary" {
         results = sorted(results, key=lambda (j: JobView) { -j.salary_lkr; });
+    } elif sort == "recent" {
+        results = sorted(results, key=lambda (j: JobView) { j.posted_at; }, reverse=True);
     } elif sort == "suitability" or sort == "relevance" {
         results = sorted(results, key=lambda (j: JobView) { -(match_pct(matches, j.id)) + (30 if j.band == "DANGER" else 0); });
     }
@@ -346,6 +359,14 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                             for rv in jb.reviews
                         ]}
                     </ul>
+                    {if message {
+                        <div className="mt-4 rounded-xl border border-primary/20 bg-secondary p-4 text-xs shadow-card rise-in">
+                            <p className="font-semibold text-primary-deep">{message}</p>
+                            {if len(last_steps) > 0 {
+                                <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 text-foreground/80">{[<li key={k}><span className="font-semibold">{s.agent}</span>{": " + s.detail}</li> for (k, s) in enumerate(last_steps)]}</ol>
+                            }}
+                        </div>
+                    }}
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <div className="rounded-xl border border-border bg-card p-4 shadow-card">
                             <p className="font-semibold">Report or review this job</p>
@@ -364,12 +385,6 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
                             <p className="font-semibold">Request a correction</p>
                             <textarea rows={3} value={correction} onChange={lambda (e: ChangeEvent) { correction = e.target.value; }} placeholder="What is wrong in this listing?" className="mt-3 w-full rounded-md border border-input bg-card px-3 py-2 text-sm"/>
                             <button onClick={lambda { request_correction(); }} className="mt-2 rounded-md border border-border px-4 py-2 text-sm font-semibold">Send for moderation</button>
-                            {if message {
-                                <div className="mt-4 rounded-md bg-secondary p-3 text-xs">
-                                    <p className="font-semibold text-primary-deep">{message}</p>
-                                    <ol className="mt-1 list-decimal pl-4">{[<li key={k}><span className="font-semibold">{s.agent}</span>{": " + s.detail}</li> for (k, s) in enumerate(last_steps)]}</ol>
-                                </div>
-                            }}
                         </div>
                     </div>
                 </Section>

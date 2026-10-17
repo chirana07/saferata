@@ -1,7 +1,7 @@
 """Agency portal, ported from the layout-coder design: live SLBFE licence gate + full agent analysis + appeals."""
 
 import from "lucide-react" { Check, X, Upload, AlertTriangle, Loader2 }
-import from jobboard { PostJob, AppealFinding, PostResult, JobView }
+import from jobboard { PostJob, ListJobs, AppealFinding, PostResult, JobView }
 import from agents { Step }
 import from .ui { risk_of, SafetyIndicator, VerifyBadge, LiveTag, PageHeader }
 
@@ -34,6 +34,16 @@ def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
         appeal_text: str = "",
         appealing: bool = False;
 
+    async def load_mine(lic: str) -> None {
+        if not lic.strip() {
+            return;
+        }
+        res = root spawn ListJobs();
+        if res.reports {
+            mine = [j for j in res.reports if j.licence_no == lic.strip()];
+        }
+    }
+
     def fill_sample {
         role = "Factory machine operator";
         country = "Malaysia";
@@ -49,6 +59,7 @@ def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
         licence_no = "3500";
         contact_phone = "0765551234";
         notes = "Pay the Rs. 200,000 service charge to our officer's account before medical. Passport will be kept by the company for safety.";
+        load_mine("3500");
     }
 
     async def submit -> None {
@@ -117,7 +128,7 @@ def:pub AgencyPortal(onPosted: Callable[[], None]) -> JsxElement {
             <div className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-card">
                 <div className="flex items-center justify-between"><h2 className="text-xl font-bold">New listing</h2><button onClick={lambda -> None { fill_sample(); }} className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold">Fill sample</button></div>
                 <fieldset className="grid gap-4 sm:grid-cols-2"><legend className="eyebrow mb-2">Agency</legend>
-                    <label className="block text-xs font-semibold">SLBFE licence number<input value={licence_no} onChange={lambda (e: ChangeEvent) { licence_no = e.target.value; }} className={INPUT}/></label>
+                    <label className="block text-xs font-semibold">SLBFE licence number<input value={licence_no} onChange={lambda (e: ChangeEvent) { licence_no = e.target.value; if len(e.target.value.strip()) >= 3 { load_mine(e.target.value.strip()); } }} className={INPUT}/></label>
                     <label className="block text-xs font-semibold">Contact phone<input value={contact_phone} onChange={lambda (e: ChangeEvent) { contact_phone = e.target.value; }} className={INPUT}/></label>
                 </fieldset>
                 <fieldset className="grid gap-4 sm:grid-cols-2"><legend className="eyebrow mb-2">Role</legend>

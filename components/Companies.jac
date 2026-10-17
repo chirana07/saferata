@@ -49,6 +49,10 @@ def:pub Companies(refresh: int) -> JsxElement {
     }
 
     async def submit -> None {
+        if not text.strip() or not job_id {
+            message = "Please enter report details and select an active listing.";
+            return;
+        }
         sending = True;
         result = root spawn AddReview(job_id=job_id, author=role or "Worker", kind="fraud" if mode == "report" else "other",
             text=("[Correction request] " if mode == "correction" else "") + text, evidence=evidence);
@@ -129,6 +133,10 @@ def:pub Companies(refresh: int) -> JsxElement {
                             <label className="block text-xs font-semibold">Evidence<input value={evidence} onChange={lambda (e: ChangeEvent) { evidence = e.target.value; }} placeholder="Receipt, bank slip details, chat excerpt" className="mt-1 h-10 w-full rounded-md border border-input bg-card px-2 text-sm font-normal"/></label>
                             <p className="text-xs text-muted-foreground">{"Don't include your NIC, passport number or phone number."}</p>
                             <button disabled={sending} onClick={lambda { submit(); }} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">{"Review Verifier checking..." if sending else "Submit for moderation"}</button>
+                        </div>
+                    } elif mode and len(c.jobs) == 0 {
+                        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground rise-in">
+                            This agency currently has no verified job listings on record to attach a report to. You can also run an offer check in Investigate.
                         </div>
                     }}
                     {if message { <p className="mt-3 rounded-md bg-secondary px-3 py-2 text-xs text-primary-deep">{message}</p> }}
