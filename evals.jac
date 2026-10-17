@@ -32,9 +32,9 @@ glob CASES: list[EvalCase] = [
 with entry:__main__ {
     passed = 0;
     for c in CASES {
-        inv = Investigate(text=c.text, answers=["No further information available."]);
+        inv = Investigate(text=c.text, answers=["No further information available."], quiet=True);
         root spawn inv;
-        r = inv.result;
+        r = inv.st.result;
         band = r.band if r is not None else "ERROR";
         score = r.score if r is not None else -1;
         ok = band in c.expected;

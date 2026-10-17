@@ -145,7 +145,7 @@ walker:pub PostJob {
         root spawn inv;
         job = Job(title=self.title, country=self.country, salary=self.salary, description=self.description,
             licence_no=ag.licence_no, agency_name=ag.name, contact_phone=self.contact_phone, posted_at=_now());
-        c = inv.result;
+        c = inv.st.result;
         if c is not None {
             steps.extend(c.steps);
             job.band = c.band;

@@ -1,6 +1,6 @@
 # SafeRata: check a foreign job offer before you pay
 
-**AI Hackathon 2026 (Jaseci) · built 100% in Jac**
+**AI Hackathon 2026 (Jaseci) · built in Jac 0.34.24 (98% Jac)**
 
 Every year many thousands of Sri Lankans pay recruiters for jobs abroad. Some meet:
 - unlicensed agents
@@ -62,19 +62,22 @@ Extractor ─▶ Lead Investigator (ReAct: chooses its own tools, may ASK the pe
 | `graph.jac` | Nodes and the typed objects the agents fill (with `sem`) |
 | `rules.jac` | Official-rule flags, evidence critic, deterministic scorer (+ unit tests) |
 | `agents.jac` | `Investigate` walker: the whole agent team |
-| `board.jac` | Job board, reviews, Review Verifier |
+| `jobboard.jac` | Job board, reviews, Review Verifier (impersonation vs agency fraud) |
 | `frontend.jac`, `components/Board.jac` | UI |
 | `evals.jac` | Labelled sample offers, with an accuracy report |
+| `scripts/api_e2e.py` | End-to-end API checks for every backend flow |
 
-## Run locally
+## Run locally (jac 0.34.24)
 
 ```bash
 export OLLAMA_API_KEY=...   # and/or GEMINI_API_KEY=...
 export LC_ALL=en_US.UTF-8
 jac install
-jac run            # app on http://localhost:8000
-jac test rules.jac # unit tests
-jac run --no-takeover evals.jac   # agent accuracy on labelled offers
+jac start                         # app + API on http://localhost:8000
+jac test rules.jac                # unit tests (rules, critic, scorer)
+jac test agents.jac               # unit tests (agency-name matching)
+jac run evals.jac                 # agent accuracy on labelled offers (live models)
+python3 scripts/api_e2e.py        # 11 end-to-end backend checks against the running server
 ```
 
 ## Limitations (honest)

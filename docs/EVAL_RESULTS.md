@@ -1,15 +1,17 @@
-# Evaluation results (17 Oct 2026, live models + live SLBFE register)
+# Evaluation results (17 Oct 2026, jac 0.34.24, live models + live SLBFE register)
 
-Run: `jac run --no-takeover evals.jac`
+Run: `jac run evals.jac`
 
 ```
 PASS | Thailand IT job (trafficking)    | got DANGER     100/100 | expected DANGER
 PASS | Licensed agency impersonated     | got BE CAREFUL  55/100 | expected DANGER or BE CAREFUL
 PASS | Genuine licensed offer           | got LOOKS SAFE   0/100 | expected LOOKS SAFE
-PASS | Fake licence number              | got DANGER      65/100 | expected DANGER
+PASS | Fake licence number              | got DANGER      83/100 | expected DANGER
 PASS | Dubai housemaid on visit visa    | got DANGER     100/100 | expected DANGER or BE CAREFUL
+PASS | Real agency name, wrong licence no. | got BE CAREFUL  45/100 | expected DANGER or BE CAREFUL
+PASS | Genuine, name written differently | got LOOKS SAFE   0/100 | expected LOOKS SAFE
 PASS | Russia security job              | got DANGER      90/100 | expected DANGER or BE CAREFUL
-6/6 verdicts correct
+8/8 verdicts correct
 ```
 
-Regression cases added after the 11:30 logic review (wrong licence number on a real agency name; agency name written differently) were verified via the API and are now in evals.jac.
+Backend API checks (`python3 scripts/api_e2e.py` against `jac start`): 11/11 passed on jac 0.34.24.

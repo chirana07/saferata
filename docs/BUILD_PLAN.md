@@ -23,6 +23,16 @@ Rule: build one part, run its check, commit, then start the next. Do not start a
 - A posted job's nested investigation no longer adds a second report to the response.
 - Fraud-review alerts fire once, when a job first becomes Danger.
 
+## Port to jac 0.34.24 (organiser requirement, 12:00)
+
+Every file type-checks on 0.34.24, and `scripts/api_e2e.py` passes 11/11 against the 0.34 server. The `jac-0.37-final` git tag marks the last 0.37.25 version. What changed:
+- **`by llm` output types** (`OfferFacts`, `SoftFlag`, `Advice`, …) now live in `agents.jac`, next to the functions that return them. On 0.34, schema types imported from another module crash byLLM ("'str' object has no attribute 'fields'").
+- **Walker fields typed `X | None = None`** are treated as required request parameters on 0.34 (HTTP 422), so the internal state moved into a `CaseState` object marked `postinit`.
+- **`board.jac` was renamed to `jobboard.jac`,** because the module name `board` was shadowed for client imports.
+- **Client components `return <jsx>;`** explicitly.
+- **`slbfe.jac`:** stricter typing fixes, and an explicit CA bundle (certifi or the OS bundle) for HTTPS.
+- **Serving:** use `jac start` (0.34 has no `jac run --port`). After moving types, clear `.jac/cache` (`jac clean`) to avoid stale schema caches.
+
 ## Next, in order
 
 | # | Part | Check | Owner |

@@ -302,21 +302,30 @@ def _flag_lines(flags: list[RedFlag]) -> list[str] {
 
 # ---------------- the investigation walker ----------------
 
+"""Internal case state (kept out of the walker's request schema)."""
+obj CaseState {
+    has facts: OfferFacts | None = None,
+        agency: AgencyRecord | None = None,
+        result: CaseReport | None = None;
+}
+
 walker:pub Investigate {
     has text: str,
         answers: list[str] = [],
         steps: list[Step] = [],
-        facts: OfferFacts | None = None,
         register_status: RegisterStatus = RegisterStatus.NOT_CHECKED,
-        agency: AgencyRecord | None = None,
         register_checked_at: str = "",
         register_flags: list[RedFlag] = [],
         community: list[str] = [],
         community_flags: list[RedFlag] = [],
         questions: list[str] = [],
         licence_not_found: bool = False,
-        quiet: bool = False,
-        result: CaseReport | None = None;
+        quiet: bool = False;
+    has st: CaseState postinit;
+
+    def postinit {
+        self.st = CaseState();
+    }
 
     def log(agent: str, action: str, detail: str) {
         self.steps.append(Step(agent=agent, action=action, detail=detail));
@@ -339,8 +348,8 @@ walker:pub Investigate {
             return f"Licence number {licence_no} is NOT on the SLBFE register of valid agencies.";
         }
         rec = r.records[0];
-        self.agency = rec;
-        claimed = self.facts.agency_name if self.facts is not None else "";
+        self.st.agency = rec;
+        claimed = self.st.facts.agency_name if self.st.facts is not None else "";
         if claimed and not _names_match(claimed, rec.name) {
             self.register_status = RegisterStatus.NAME_MISMATCH;
             self.log("Lead Investigator", "lookup_licence", f"#{licence_no} belongs to {rec.name}, not '{claimed}'");
@@ -371,7 +380,7 @@ walker:pub Investigate {
             self.log("Lead Investigator", "lookup_agency_name", f"'{name}' is licensed as {hits[0].licence_no}, but the printed licence number belongs to another agency");
             return f"'{name}' is a licensed agency (licence {hits[0].licence_no}), but the licence number printed in the offer belongs to a different agency.";
         }
-        self.agency = hits[0];
+        self.st.agency = hits[0];
         if self.licence_not_found {
             self.register_status = RegisterStatus.NAME_MISMATCH;
             self.log("Lead Investigator", "lookup_agency_name", f"'{name}' is licensed as {hits[0].licence_no}, but the licence number printed in the offer does not exist");
@@ -383,13 +392,13 @@ walker:pub Investigate {
     }
 
     def check_contacts -> str {
-        if self.agency is None or self.facts is None {
+        if self.st.agency is None or self.st.facts is None {
             self.log("Lead Investigator", "check_contacts", "skipped: no verified agency yet");
             return "No verified agency to compare against. Look up the agency first.";
         }
-        ag = self.agency;
-        fphones: list[str] = self.facts.phones;
-        femails: list[str] = self.facts.emails;
+        ag = self.st.agency;
+        fphones: list[str] = self.st.facts.phones;
+        femails: list[str] = self.st.facts.emails;
         offer_phones = [normalise_phone(p) for p in fphones if normalise_phone(p)];
         offer_emails = [e.lower().strip() for e in femails];
         foreign_phones = [p for p in offer_phones if p not in ag.phones];
@@ -450,7 +459,7 @@ walker:pub Investigate {
     # ----- deterministic register / community flags -----
 
     def build_evidence_flags {
-        claimed = self.facts.agency_name if self.facts is not None else "";
+        claimed = self.st.facts.agency_name if self.st.facts is not None else "";
         if self.register_status == RegisterStatus.NOT_FOUND {
             self.register_flags.append(
                 RedFlag(code="NOT_LICENSED", title="Agency is not on the SLBFE register", points=40,
@@ -458,18 +467,18 @@ walker:pub Investigate {
                     explanation="Only SLBFE-licensed agencies may recruit for foreign jobs. An unlicensed recruiter is illegal and you have no protection.",
                     source=SRC_REGISTER, agent="Lead Investigator")
             );
-        } elif self.register_status == RegisterStatus.NAME_MISMATCH and self.agency is not None {
+        } elif self.register_status == RegisterStatus.NAME_MISMATCH and self.st.agency is not None {
             self.register_flags.append(
                 RedFlag(code="LICENCE_MISMATCH", title="Printed licence number does not match the agency", points=35,
-                    evidence=f"Offer prints licence {self.facts.licence_no if self.facts is not None else '?'}; register: {self.agency.name} = licence {self.agency.licence_no}",
+                    evidence=f"Offer prints licence {self.st.facts.licence_no if self.st.facts is not None else '?'}; register: {self.st.agency.name} = licence {self.st.agency.licence_no}",
                     explanation="Scammers often print a real licence number that belongs to another company.",
                     source=SRC_REGISTER, agent="Lead Investigator")
             );
         }
-        if self.agency is not None and self.facts is not None and self.register_status == RegisterStatus.VERIFIED {
-            ag = self.agency;
-            odd = [p for p in [normalise_phone(x) for x in self.facts.phones] if p and p not in ag.phones];
-            odd_mail = [e.lower().strip() for e in self.facts.emails if e.lower().strip() != ag.email];
+        if self.st.agency is not None and self.st.facts is not None and self.register_status == RegisterStatus.VERIFIED {
+            ag = self.st.agency;
+            odd = [p for p in [normalise_phone(x) for x in self.st.facts.phones] if p and p not in ag.phones];
+            odd_mail = [e.lower().strip() for e in self.st.facts.emails if e.lower().strip() != ag.email];
             if odd or odd_mail {
                 self.register_flags.append(
                     RedFlag(code="IMPERSONATION", title="Contact details not registered to this agency", points=30,
@@ -479,7 +488,7 @@ walker:pub Investigate {
                 );
             }
         }
-        official: list[str] = self.agency.phones if (self.agency is not None and self.register_status == RegisterStatus.VERIFIED) else [];
+        official: list[str] = self.st.agency.phones if (self.st.agency is not None and self.register_status == RegisterStatus.VERIFIED) else [];
         for line in self.community {
             if any([line.startswith(p + " ") for p in official]) {
                 continue;
@@ -495,22 +504,22 @@ walker:pub Investigate {
     }
 
     def ensure_register_checked {
-        if self.facts is None {
+        if self.st.facts is None {
             return;
         }
         if self.register_status == RegisterStatus.NOT_CHECKED {
-            if self.facts.licence_no {
+            if self.st.facts.licence_no {
                 self.log("Supervisor", "enforce_check", "investigator skipped the register; checking licence number");
-                self.lookup_licence(self.facts.licence_no);
-            } elif self.facts.agency_name {
+                self.lookup_licence(self.st.facts.licence_no);
+            } elif self.st.facts.agency_name {
                 self.log("Supervisor", "enforce_check", "investigator skipped the register; checking agency name");
-                self.lookup_agency_name(self.facts.agency_name);
+                self.lookup_agency_name(self.st.facts.agency_name);
             } else {
                 self.register_status = RegisterStatus.NOT_FOUND;
                 self.log("Supervisor", "enforce_check", "no agency or licence named in the offer");
             }
         }
-        for p in self.facts.phones {
+        for p in self.st.facts.phones {
             v = normalise_phone(p);
             if v and not any([v in c for c in self.community]) {
                 self.community_reports(p);
@@ -521,7 +530,7 @@ walker:pub Investigate {
     # ----- persistence + network alerts -----
 
     def save_case(band: str, score: int, summary: str) -> tuple[str, int] {
-        f = self.facts;
+        f = self.st.facts;
         if f is None {
             return ("", 0);
         }
@@ -529,8 +538,8 @@ walker:pub Investigate {
             verdict=band.replace(" ", "_").replace("LOOKS_SAFE", "SAFE").replace("BE_CAREFUL", "CAREFUL"),
             score=score, summary=summary, created_at=_now());
         root ++> offer;
-        if self.agency is not None {
-            ag = self.agency;
+        if self.st.agency is not None {
+            ag = self.st.agency;
             existing = [a for a in [root -->[?:Agency]] if a.licence_no == ag.licence_no];
             node_ag = existing[0] if existing else Agency(licence_no=ag.licence_no, name=ag.name, phones=ag.phones, email=ag.email, valid_upto=ag.valid_upto, checked_at=self.register_checked_at);
             if not existing {
@@ -539,8 +548,8 @@ walker:pub Investigate {
             offer ++> node_ag;
         }
         official: list[str] = [];
-        if self.agency is not None {
-            official = self.agency.phones + [self.agency.email];
+        if self.st.agency is not None {
+            official = self.st.agency.phones + [self.st.agency.email];
         }
         fphones: list[str] = f.phones;
         femails: list[str] = f.emails;
@@ -574,7 +583,7 @@ walker:pub Investigate {
     can run with Root entry {
         self.log("Supervisor", "start", f"new case, {len(self.text)} characters" + (f", {len(self.answers)} answers from the person" if self.answers else ""));
         facts = extract_facts(self.text + ("\n\nExtra answers from the person:\n" + "\n".join(self.answers) if self.answers else ""));
-        self.facts = facts;
+        self.st.facts = facts;
         self.log("Extractor", "extract_facts", f"{facts.job_title or '?'} in {facts.country or '?'}; agency '{facts.agency_name or 'none'}'; licence '{facts.licence_no or 'none'}'; visa '{facts.visa_type or 'not stated'}'; {len(facts.phones)} phone(s), {len(facts.fees)} fee(s)");
 
         notes = self.investigate(self.text, facts, self.answers);
@@ -583,10 +592,10 @@ walker:pub Investigate {
 
         if self.questions and not self.answers {
             self.log("Supervisor", "pause", f"needs {len(self.questions)} answer(s) from the person before the verdict");
-            self.result = CaseReport(status="needs_input", questions=self.questions, steps=self.steps, facts=facts,
-                agency=self.agency, register_status=self.register_status.name);
+            self.st.result = CaseReport(status="needs_input", questions=self.questions, steps=self.steps, facts=facts,
+                agency=self.st.agency, register_status=self.register_status.name);
             if not self.quiet {
-                report self.result;
+                report self.st.result;
             }
             disengage;
         }
@@ -649,12 +658,12 @@ walker:pub Investigate {
         if self.community {
             sources.append(Source(name=SRC_COMMUNITY, detail=" ".join(self.community)));
         }
-        self.result = CaseReport(status="done", band=sc.band, score=sc.total, hard_points=sc.hard_points, soft_points=sc.soft_points,
+        self.st.result = CaseReport(status="done", band=sc.band, score=sc.total, hard_points=sc.hard_points, soft_points=sc.soft_points,
             flags=final, removed=removed, prosecution=prosecution, defence=defence, judge=ruling.summary, advice=advice,
-            agency=self.agency, register_status=self.register_status.name, community=self.community, alerts_sent=alerts,
+            agency=self.st.agency, register_status=self.register_status.name, community=self.community, alerts_sent=alerts,
             facts=facts, sources=sources, steps=self.steps, offer_id=offer_id);
         if not self.quiet {
-            report self.result;
+            report self.st.result;
         }
     }
 }
