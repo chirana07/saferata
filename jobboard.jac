@@ -8,6 +8,7 @@ import from models { llm }
 import from graph { Agency, Contact, Offer, Alert }
 import from agents { Investigate, CaseReport, Step }
 import from slbfe { search_by_licence, normalise_phone }
+import from rules { SRC_AGENT, parse_salary, to_lkr, match_job }
 
 node Job {
     has title: str,
@@ -23,7 +24,19 @@ node Job {
         base_score: int = 0,
         summary: str = "",
         top_flags: list[str] = [],
-        warnings: list[str] = [];
+        warnings: list[str] = [],
+        occupation: str = "",
+        experience_years: int = 0,
+        contract_type: str = "",
+        contract_months: int = 0,
+        accommodation: str = "",
+        deductions: str = "",
+        monthly_deductions: float = 0.0,
+        worker_fee_lkr: float = 0.0,
+        soft_flags: list[str] = [],
+        hard_points: int = 0,
+        appeals: list[str] = [],
+        corrections: list[str] = [];
 }
 
 node Review {
@@ -35,18 +48,21 @@ node Review {
         status: str = "",
         reason: str = "",
         impersonation: bool = False,
+        agency_response: str = "",
         created_at: str = "";
 }
 
 obj ReviewView {
-    has author: str,
+    has id: str,
+        author: str,
         kind: str,
         text: str,
         evidence: str,
         credibility: int,
         status: str,
         reason: str,
-        created_at: str;
+        created_at: str,
+        agency_response: str = "";
 }
 
 obj JobView {
@@ -65,7 +81,21 @@ obj JobView {
         top_flags: list[str],
         warnings: list[str],
         reviews: list[ReviewView],
-        credible_fraud_reports: int;
+        credible_fraud_reports: int,
+        occupation: str = "",
+        experience_years: int = 0,
+        contract_type: str = "",
+        contract_months: int = 0,
+        accommodation: str = "",
+        deductions: str = "",
+        salary_amount: float = 0.0,
+        salary_currency: str = "",
+        salary_lkr: float = 0.0,
+        take_home_lkr: float = 0.0,
+        worker_fee_lkr: float = 0.0,
+        appeals: list[str] = [],
+        corrections: list[str] = [],
+        appealable: list[str] = [];
 }
 
 obj PostResult {
@@ -111,11 +141,18 @@ def _band_for(score: int) -> str {
 
 def job_view(j: Job) -> JobView {
     reviews = [r for r in [j -->[?:Review]]];
-    views = [ReviewView(author=r.author, kind=r.kind, text=r.text, evidence=r.evidence, credibility=r.credibility, status=r.status, reason=r.reason, created_at=r.created_at) for r in reviews];
+    views = [ReviewView(id=jid(r), agency_response=r.agency_response, author=r.author, kind=r.kind, text=r.text, evidence=r.evidence, credibility=r.credibility, status=r.status, reason=r.reason, created_at=r.created_at) for r in reviews];
     fraud = len([r for r in reviews if r.kind == "fraud" and r.status == "credible" and not r.impersonation]);
+    (amount, cur) = parse_salary(j.salary);
+    lkr = to_lkr(amount, cur) if amount > 0 else 0.0;
+    deduct_lkr = to_lkr(j.monthly_deductions, cur) if (j.monthly_deductions > 0 and cur) else 0.0;
     return JobView(id=jid(j), title=j.title, country=j.country, salary=j.salary, description=j.description,
         licence_no=j.licence_no, agency_name=j.agency_name, contact_phone=j.contact_phone, posted_at=j.posted_at,
-        band=j.band, score=j.score, summary=j.summary, top_flags=j.top_flags, warnings=j.warnings, reviews=views, credible_fraud_reports=fraud);
+        band=j.band, score=j.score, summary=j.summary, top_flags=j.top_flags, warnings=j.warnings, reviews=views, credible_fraud_reports=fraud,
+        occupation=j.occupation, experience_years=j.experience_years, contract_type=j.contract_type, contract_months=j.contract_months,
+        accommodation=j.accommodation, deductions=j.deductions, salary_amount=amount, salary_currency=cur,
+        salary_lkr=max(lkr, 0.0), take_home_lkr=max(lkr - deduct_lkr, 0.0) if lkr > 0 else 0.0, worker_fee_lkr=j.worker_fee_lkr, appeals=j.appeals,
+        corrections=j.corrections, appealable=[f.split("|")[0] for f in j.soft_flags]);
 }
 
 walker:pub PostJob {
@@ -124,7 +161,15 @@ walker:pub PostJob {
         salary: str,
         description: str,
         licence_no: str,
-        contact_phone: str;
+        contact_phone: str,
+        occupation: str = "",
+        experience_years: int = 0,
+        contract_type: str = "",
+        contract_months: int = 0,
+        accommodation: str = "",
+        deductions: str = "",
+        monthly_deductions: float = 0.0,
+        worker_fee_lkr: float = 0.0;
 
     can post with Root entry {
         steps: list[Step] = [Step(agent="Gatekeeper", action="verify_licence", detail=f"checking licence {self.licence_no} on the live SLBFE register")];
@@ -140,11 +185,17 @@ walker:pub PostJob {
         }
         ag = reg.records[0];
         steps.append(Step(agent="Gatekeeper", action="verified", detail=f"{ag.name}, valid until {ag.valid_upto}"));
-        text = f"{ag.name} (SLBFE Licence No {ag.licence_no})\nJob: {self.title} - {self.country}\nSalary: {self.salary}\n{self.description}\nContact: {self.contact_phone}";
+        extra = f"\nContract: {self.contract_type} {self.contract_months} months" if self.contract_type or self.contract_months else "";
+        extra += f"\nAccommodation: {self.accommodation}" if self.accommodation else "";
+        extra += f"\nDeductions: {self.deductions}" if self.deductions else "";
+        extra += f"\nWorker fee: Rs. {self.worker_fee_lkr:,.0f}" if self.worker_fee_lkr > 0 else "";
+        text = f"{ag.name} (SLBFE Licence No {ag.licence_no})\nJob: {self.title} - {self.country}\nSalary: {self.salary}\n{self.description}{extra}\nContact: {self.contact_phone}";
         inv = Investigate(text=text, answers=["This job was posted directly on the SafeRata job board by the licensed agency; answer from the posting only."], quiet=True);
         root spawn inv;
         job = Job(title=self.title, country=self.country, salary=self.salary, description=self.description,
-            licence_no=ag.licence_no, agency_name=ag.name, contact_phone=self.contact_phone, posted_at=_now());
+            licence_no=ag.licence_no, agency_name=ag.name, contact_phone=self.contact_phone, posted_at=_now(),
+            occupation=self.occupation, experience_years=self.experience_years, contract_type=self.contract_type, contract_months=self.contract_months,
+            accommodation=self.accommodation, deductions=self.deductions, monthly_deductions=self.monthly_deductions, worker_fee_lkr=self.worker_fee_lkr);
         c = inv.st.result;
         if c is not None {
             steps.extend(c.steps);
@@ -153,6 +204,8 @@ walker:pub PostJob {
             job.base_score = c.score;
             job.summary = c.judge;
             job.top_flags = [f"{f.title} (+{f.points})" for f in c.flags];
+            job.soft_flags = [f"{f.title}|{f.points}" for f in c.flags if f.source == SRC_AGENT];
+            job.hard_points = c.hard_points;
         }
         root ++> job;
         existing = [a for a in [root -->[?:Agency]] if a.licence_no == ag.licence_no];
@@ -185,7 +238,9 @@ obj AgencyView {
         jobs: list[JobView],
         reports: int,
         credible_fraud: int,
-        warnings: list[str];
+        warnings: list[str],
+        related_checks: list[str] = [],
+        impersonator_numbers: list[str] = [];
 }
 
 def agency_view(a: Agency) -> AgencyView {
@@ -196,8 +251,20 @@ def agency_view(a: Agency) -> AgencyView {
     for j in jobs {
         warns.extend(j.warnings);
     }
+    # graph walk: offers people checked that named this agency (Offer --> Agency), and scam numbers reported against its jobs
+    related: list[str] = [f"{o.created_at}: {o.job or 'job offer'} in {o.country or '?'} -> {o.verdict}" for o in [a <--[?:Offer]]];
+    imp: list[str] = [];
+    for j in [a -->[?:Job]] {
+        for rv in [j -->[?:Review]] {
+            for ct in [rv -->[?:Contact]] {
+                if ct.value not in imp {
+                    imp.append(ct.value);
+                }
+            }
+        }
+    }
     return AgencyView(id=jid(a), licence_no=a.licence_no, name=a.name, phones=a.phones, email=a.email, valid_upto=a.valid_upto,
-        checked_at=a.checked_at, jobs=jobs, reports=reports, credible_fraud=fraud, warnings=warns);
+        checked_at=a.checked_at, jobs=jobs, reports=reports, credible_fraud=fraud, warnings=warns, related_checks=related, impersonator_numbers=imp);
 }
 
 """Companies screen: every agency the system has verified on the SLBFE register, with its jobs and worker reports."""
@@ -205,6 +272,35 @@ walker:pub ListAgencies {
     can list with Root entry {
         for a in [root -->[?:Agency]] {
             report agency_view(a);
+        }
+    }
+}
+
+obj JobMatch {
+    has job_id: str,
+        match: int,
+        reasons: list[str],
+        cautions: list[str];
+}
+
+"""Profile matching. The profile lives in the worker's browser and is sent per request; nothing about the person is stored."""
+walker:pub MatchJobs {
+    has occupation: str = "",
+        skills: list[str] = [],
+        destinations: list[str] = [],
+        min_salary_lkr: float = 0.0,
+        experience_years: int = 0,
+        needs_accommodation: bool = False;
+
+    can rank with Root entry {
+        for j in [root -->[?:Job]] {
+            v = job_view(j);
+            (m, why, warn) = match_job(self.occupation, self.skills, self.destinations, self.min_salary_lkr, self.experience_years, self.needs_accommodation,
+                v.title + " " + v.occupation + " " + v.description + " " + v.accommodation, v.country, v.salary_lkr, v.experience_years, v.accommodation);
+            if v.band != "LOOKS SAFE" {
+                warn.append(f"Safety: {v.band} ({v.score}/100). A high match does not mean the job is safe.");
+            }
+            report JobMatch(job_id=v.id, match=m, reasons=why, cautions=warn);
         }
     }
 }
@@ -285,5 +381,96 @@ walker:pub AddReview {
             }
         }
         report PostResult(ok=True, message=f"Review {status}.", job=job_view(job), steps=steps);
+    }
+}
+
+obj AppealDecision {
+    has accept: bool,
+        reason: str;
+}
+
+sem AppealDecision.accept = "True only if the agency's explanation and evidence clearly show the finding was wrong or is now fixed (e.g. the fee was removed, the clause was misread).";
+sem AppealDecision.reason = "One or two sentences explaining the decision to both the agency and workers.";
+
+def review_appeal(finding: str, job_description: str, explanation: str, evidence: str) -> AppealDecision by llm(temperature=0.0);
+sem review_appeal = "You are the Appeal Reviewer agent on a platform protecting Sri Lankan migrant workers. An agency disputes an AI finding on its job listing. Accept the appeal only if the explanation and evidence clearly rebut the finding as it applies to the listing text. Be fair to honest agencies but never accept vague denials.";
+
+def _rescore(j: Job) {
+    soft = sum([int(f.split("|")[1]) for f in j.soft_flags if "|" in f]);
+    base = min(100, j.hard_points + min(soft, 20));
+    fraud = len([r for r in [j -->[?:Review]] if r.kind == "fraud" and r.status == "credible" and not r.impersonation]);
+    j.base_score = base;
+    j.score = min(100, base + 30 * fraud);
+    j.band = _band_for(j.score);
+}
+
+"""Agency disputes an agent-judgement finding on its listing. Official register/rule findings cannot be appealed here."""
+walker:pub AppealFinding {
+    has job_id: str,
+        finding: str,
+        explanation: str,
+        evidence: str = "";
+
+    can appeal with Root entry {
+        target = jobj(self.job_id);
+        if not isinstance(target, Job) {
+            report PostResult(ok=False, message="Job not found.");
+            disengage;
+        }
+        job: Job = target;
+        steps: list[Step] = [];
+        titles = [f.split("|")[0] for f in job.soft_flags];
+        if self.finding not in titles {
+            steps.append(Step(agent="Appeal Reviewer", action="refuse", detail=f"'{self.finding}' is an official register or rule finding, which only the SLBFE can change"));
+            report PostResult(ok=False, message="Only agent-judgement findings can be appealed here. Official register and rule findings must be resolved with the SLBFE.", job=job_view(job), steps=steps);
+            disengage;
+        }
+        d = review_appeal(self.finding, job.description, self.explanation, self.evidence);
+        old_band = job.band;
+        if d.accept {
+            job.soft_flags = [f for f in job.soft_flags if f.split("|")[0] != self.finding];
+            job.top_flags = [f for f in job.top_flags if not f.startswith(self.finding + " (")];
+            _rescore(job);
+        }
+        job.appeals = job.appeals + [f"{_now()} · {self.finding}: {'accepted' if d.accept else 'rejected'}. {d.reason}"];
+        steps.append(Step(agent="Appeal Reviewer", action="decide", detail=f"{'accepted' if d.accept else 'rejected'}: {d.reason}"));
+        if d.accept {
+            steps.append(Step(agent="Supervisor", action="re-score", detail=f"{old_band} -> {job.band} ({job.score}/100)"));
+        }
+        report PostResult(ok=True, message=f"Appeal {'accepted' if d.accept else 'rejected'}.", job=job_view(job), steps=steps);
+    }
+}
+
+"""Agency's public reply to a worker review (shown under the review)."""
+walker:pub RespondToReview {
+    has review_id: str,
+        response: str;
+
+    can respond with Root entry {
+        target = jobj(self.review_id);
+        if not isinstance(target, Review) {
+            report PostResult(ok=False, message="Review not found.");
+            disengage;
+        }
+        rv: Review = target;
+        rv.agency_response = self.response.strip()[:800];
+        report PostResult(ok=True, message="Response published under the review.");
+    }
+}
+
+"""Request a correction to a listing's facts; logged on the job for moderators."""
+walker:pub RequestCorrection {
+    has job_id: str,
+        details: str;
+
+    can request with Root entry {
+        target = jobj(self.job_id);
+        if not isinstance(target, Job) {
+            report PostResult(ok=False, message="Job not found.");
+            disengage;
+        }
+        job: Job = target;
+        job.corrections = job.corrections + [f"{_now()} · {self.details.strip()[:500]}"];
+        report PostResult(ok=True, message="Correction request logged for moderation.", job=job_view(job));
     }
 }

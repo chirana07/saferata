@@ -188,6 +188,75 @@ def text_similarity(a: str, b: str) -> float {
     return len(ga & gb) / len(ga | gb);
 }
 
+"""Parse a salary string like 'QAR 2,000 + accommodation', '1800 AED' or 'Rs. 150,000' into (amount, currency)."""
+def parse_salary(text: str) -> tuple[float, str] {
+    t = text.upper().replace("RS.", "LKR ").replace("RS ", "LKR ");
+    codes = "|".join(list(LKR_RATES.keys()));
+    m1: list[list[str]] = re.findall(r"(" + codes + r")\s*([\d,]+(?:\.\d+)?)", t);
+    if m1 {
+        return (float(m1[0][1].replace(",", "")), m1[0][0]);
+    }
+    m2: list[list[str]] = re.findall(r"([\d,]+(?:\.\d+)?)\s*(" + codes + r")", t);
+    if m2 {
+        return (float(m2[0][0].replace(",", "")), m2[0][1]);
+    }
+    return (0.0, "");
+}
+
+"""Transparent profile-to-job match (0-100) with reasons and cautions. Safety is scored separately and never changes this."""
+def match_job(occupation: str, skills: list[str], destinations: list[str], min_salary_lkr: float, experience: int, needs_accommodation: bool,
+              job_text: str, job_country: str, job_salary_lkr: float, job_experience: int, job_accommodation: str) -> tuple[int, list[str], list[str]] {
+    score = 0;
+    reasons: list[str] = [];
+    cautions: list[str] = [];
+    text = job_text.lower();
+    occ_words = [w for w in re.sub(r"[^a-z ]", " ", occupation.lower()).split() if len(w) > 2];
+    if occ_words and any([w in text for w in occ_words]) {
+        score += 35;
+        reasons.append(f"Matches your occupation ({occupation})");
+    }
+    hits = [sk for sk in skills if sk.strip() and sk.strip().lower() in text];
+    if hits {
+        score += min(15, 5 * len(hits));
+        reasons.append("Uses your skills: " + ", ".join(hits));
+    }
+    if not destinations {
+        score += 10;
+    } elif any([d.strip().lower() == job_country.strip().lower() for d in destinations]) {
+        score += 20;
+        reasons.append(f"{job_country} is one of your preferred destinations");
+    } else {
+        cautions.append(f"{job_country} is not in your preferred destinations");
+    }
+    if job_salary_lkr <= 0 {
+        cautions.append("Salary could not be converted to LKR");
+    } elif job_salary_lkr >= min_salary_lkr {
+        score += 20;
+        reasons.append(f"Pays about Rs. {job_salary_lkr:,.0f}, above your minimum of Rs. {min_salary_lkr:,.0f}");
+    } else {
+        cautions.append(f"Pays about Rs. {job_salary_lkr:,.0f}, below your minimum of Rs. {min_salary_lkr:,.0f}");
+    }
+    if job_experience <= experience {
+        score += 10;
+        if job_experience > 0 {
+            reasons.append(f"Needs {job_experience} year(s) of experience; you have {experience}");
+        }
+    } else {
+        cautions.append(f"Needs {job_experience} year(s) of experience; you have {experience}");
+    }
+    if needs_accommodation {
+        if job_accommodation.strip() or "accommodation" in text {
+            score += 5;
+            reasons.append("Accommodation is provided");
+        } else {
+            cautions.append("Accommodation is not mentioned");
+        }
+    } else {
+        score += 5;
+    }
+    return (min(score, 100), reasons, cautions);
+}
+
 """Critic: keep a flag only if its evidence is literally in the offer (register/community flags are exempt)."""
 def critic(flags: list[RedFlag], text: str) -> tuple[list[RedFlag], list[str]] {
     kept: list[RedFlag] = [];
@@ -295,6 +364,23 @@ test "duplicate detector similarity ignores changed numbers" {
     b = "URGENT HIRING IT data entry jobs in Thailand salary USD 1800 free accommodation pay processing fee WhatsApp 0771112222";
     assert text_similarity(a, b) > 0.8;
     assert text_similarity(a, "Qatar light vehicle driver employment visa contract before departure") < 0.1;
+}
+
+test "salary parsing" {
+    assert parse_salary("QAR 2,000 + accommodation") == (2000.0, "QAR");
+    assert parse_salary("1800 AED per month") == (1800.0, "AED");
+    assert parse_salary("Rs. 150,000") == (150000.0, "LKR");
+    assert parse_salary("negotiable") == (0.0, "");
+}
+
+test "profile match is transparent" {
+    (m, why, warn) = match_job("Driver", ["Gulf licence"], ["Qatar"], 150000.0, 3, True,
+        "light vehicle driver qatar employment visa accommodation provided gulf licence", "Qatar", 164000.0, 2, "Shared room");
+    assert m == 95;
+    assert len(warn) == 0;
+    (m2, why2, warn2) = match_job("Chef", [], ["Japan"], 300000.0, 1, False, "light vehicle driver", "Qatar", 164000.0, 2, "");
+    assert m2 < 20;
+    assert len(warn2) == 3;
 }
 
 test "scoring bands" {
