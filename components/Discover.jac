@@ -1,25 +1,15 @@
-"""Discover: verified job listings with safety badges, search/filter, and a job detail view with worker reports."""
+"""Discover + job detail, ported from the layout-coder design (same Tailwind classes) and driven by the real backend."""
 
-import from jobboard { ListJobs, AddReview, MatchJobs, RespondToReview, RequestCorrection, JobView, JobMatch, PostResult, ReviewView }
+import from "lucide-react" { Search, SlidersHorizontal, ArrowRight, ArrowLeft, X, Info, MessageSquare }
+import from jobboard { ListJobs, AddReview, MatchJobs, RespondToReview, RequestCorrection, JobView, JobMatch, PostResult, ReviewView, FindingView }
+import from agents { RecentChecks, CheckView, Step }
 import from .Profile { prof }
-import from agents { Step }
-import from .theme {
-    INK, MUTED_INK, PRIMARY, PRIMARY_DEEP, ACCENT, MUTED, BORDER, RISK, RISK_SOFT, CARD, LABEL,
-    band_label, band_fg, band_bg
-}
+import from .ui { risk_of, SafetyIndicator, MatchMeter, VerifyBadge, CountryTag, FindingItem, LiveTag, EmptyState }
+
+glob SEL = "h-10 rounded-md border border-input bg-card px-3 text-sm font-medium focus:border-primary";
 
 def:pub NotBuilt(label: str) -> JsxElement {
-    return <span style={{"background": "#f1f3f8", "color": "#8a93a8", "border": "1px dashed #c9cfdc", "borderRadius": "6px", "padding": "1px 7px", "fontSize": "11px", "fontWeight": "600"}}>{label + ": not built yet"}</span>;
-}
-
-def risk_rank(band: str) -> int {
-    if band == "LOOKS SAFE" {
-        return 0;
-    }
-    if band == "BE CAREFUL" {
-        return 1;
-    }
-    return 2;
+    return <span className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label + ": not built yet"}</span>;
 }
 
 def match_pct(matches: list[JobMatch], job_id: str) -> int {
@@ -37,33 +27,115 @@ def match_cautions(matches: list[JobMatch], job_id: str) -> list[str] {
     return hits[0] if hits else [];
 }
 
-def money(v: float) -> str {
-    return f"Rs. {v:,.0f}" if v > 0 else "not stated";
+def lkr(v: float) -> str {
+    return f"LKR {v:,.0f}";
+}
+
+def finding_kind(source: str) -> str {
+    if "Agent" in source {
+        return "suspected";
+    }
+    if "community" in source {
+        return "allegation";
+    }
+    return "confirmed";
+}
+
+def finding_risk(points: int) -> str {
+    return "critical" if points >= 30 else ("high" if points >= 20 else "moderate");
+}
+
+def profile_pct -> int {
+    keys = ["occupation", "skills", "experience", "destinations", "min_salary", "name"];
+    return int(100 * len([k for k in keys if prof(k, "") and prof(k, "") != "0"]) / len(keys));
+}
+
+def:pub Section(n: str, title: str, children: any = None) -> JsxElement {
+    return <section className="grid gap-4 border-t border-border py-8 md:grid-cols-[180px_1fr]">
+        <div><p className="font-mono text-xs text-muted-foreground">{n}</p><h2 className="mt-1 text-xl font-bold">{title}</h2></div>
+        <div>{children}</div>
+    </section>;
+}
+
+def:pub JobCard(job: JobView, matchv: int, reasons: list[str], variant: str, onOpen: Callable[[str], None]) -> JsxElement {
+    risk = risk_of(job.band, job.score);
+    def open_it(e: MouseEvent) {
+        onOpen(job.id);
+    }
+    return <button onClick={open_it} className={"group relative flex flex-col rounded-xl border border-border bg-card p-5 text-left shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lift rise-in " + ("sm:col-span-2" if variant == "wide" else "")}>
+        <div className="flex items-start justify-between gap-3">
+            <CountryTag country={job.country}/>
+            {if len(job.warnings) > 0 {
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-primary-deep">Impersonators reported</span>
+            }}
+        </div>
+        {if variant == "salary" {
+            <div>
+                <p className="mt-5 font-display text-3xl font-bold tracking-tight">{job.salary}</p>
+                <p className="text-xs text-muted-foreground">{("per month · ≈ " + lkr(job.salary_lkr)) if job.salary_lkr > 0 else "per month"}</p>
+                <h3 className="mt-3 text-base font-semibold leading-snug tracking-tight">{job.title}</h3>
+            </div>
+        } else {
+            <div>
+                <h3 className={"mt-4 font-semibold leading-snug tracking-tight " + ("text-2xl" if variant == "wide" else "text-lg")}>{job.title}</h3>
+                <p className="mt-1 text-sm"><span className="font-semibold">{job.salary}</span><span className="text-muted-foreground">{(" / month · ≈ " + lkr(job.salary_lkr)) if job.salary_lkr > 0 else " / month"}</span></p>
+            </div>
+        }}
+        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border pt-3 text-xs">
+            <div><dt className="eyebrow">Agency</dt><dd className="mt-0.5 truncate font-medium">{job.agency_name}</dd></div>
+            <div><dt className="eyebrow">Contract</dt><dd className="mt-0.5 truncate font-medium">{(job.contract_type or "—") + (f" · {job.contract_months} mo" if job.contract_months else "")}</dd></div>
+            <div className="col-span-2"><dt className="eyebrow">Take-home (est.)</dt><dd className="mt-0.5 font-medium">{lkr(job.take_home_lkr) if job.take_home_lkr > 0 else "Not enough data"}</dd></div>
+        </dl>
+        {if variant == "wide" and len(reasons) > 0 {
+            <p className="mt-3 text-sm text-muted-foreground">{"Why it fits: " + " · ".join(reasons)}</p>
+        }}
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
+            <SafetyIndicator risk={risk}/>
+            {if matchv >= 0 {
+                <MatchMeter value={matchv}/>
+            }}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+            <VerifyBadge state="verified" prefix="Licence"/>
+            {if job.credible_fraud_reports > 0 {
+                <span className="eyebrow text-risk">{f"{job.credible_fraud_reports} fraud report(s)"}</span>
+            }}
+        </div>
+    </button>;
 }
 
 def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> JsxElement {
     has jobs: list[JobView] = [],
+        checks: list[CheckView] = [],
+        matches: list[JobMatch] = [],
         loading: bool = False,
-        query: str = "",
+        q: str = "",
         country: str = "",
-        sort: str = "recent",
+        occ: str = "",
+        min_sal: str = "0",
+        exp: str = "-1",
+        ctype: str = "",
+        sort: str = "relevance",
+        show_filters: bool = False,
         open_id: str = "",
+        enquire: bool = False,
         review_author: str = "",
         review_kind: str = "fraud",
         review_text: str = "",
         review_evidence: str = "",
         reviewing: bool = False,
-        message: str = "",
-        matches: list[JobMatch] = [],
         respond_id: str = "",
         respond_text: str = "",
         correction: str = "",
+        message: str = "",
         last_steps: list[Step] = [];
 
     async def load -> None {
         loading = True;
         result = root spawn ListJobs();
         jobs = result.reports;
+        rc = root spawn RecentChecks();
+        checks = rc.reports;
         if prof("saved", "") == "yes" {
             mres = root spawn MatchJobs(occupation=prof("occupation", ""), skills=[x.strip() for x in prof("skills", "").split(",") if x.strip()],
                 destinations=[x.strip() for x in prof("destinations", "").split(",") if x.strip()], min_salary_lkr=float(prof("min_salary", "0") or "0"),
@@ -71,6 +143,20 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
             matches = mres.reports;
         }
         loading = False;
+    }
+
+    async def submit_review -> None {
+        reviewing = True;
+        result = root spawn AddReview(job_id=open_id, author=review_author, kind=review_kind, text=review_text, evidence=review_evidence);
+        if result.reports {
+            r: PostResult = result.reports[0];
+            message = r.message;
+            last_steps = r.steps;
+        }
+        review_text = "";
+        review_evidence = "";
+        reviewing = False;
+        await load();
     }
 
     async def respond -> None {
@@ -94,266 +180,293 @@ def:pub Discover(onCheck: Callable[[], None], onProfile: Callable[[], None]) -> 
         await load();
     }
 
-    async def submit_review -> None {
-        reviewing = True;
-        result = root spawn AddReview(job_id=open_id, author=review_author, kind=review_kind, text=review_text, evidence=review_evidence);
-        if result.reports {
-            r: PostResult = result.reports[0];
-            message = r.message;
-            last_steps = r.steps;
-        }
-        review_text = "";
-        review_evidence = "";
-        reviewing = False;
-        await load();
+    def open_job(jid_: str) {
+        open_id = jid_;
+        message = "";
+        last_steps = [];
+        enquire = False;
+    }
+
+    def reset {
+        q = "";
+        country = "";
+        occ = "";
+        min_sal = "0";
+        exp = "-1";
+        ctype = "";
     }
 
     can with entry {
         load();
     }
 
-    q = query.lower();
-    shown = [j for j in jobs if (not q or q in (j.title + " " + j.country + " " + j.agency_name + " " + j.description).lower()) and (not country or j.country == country)];
-    if sort == "risk" {
-        shown = sorted(shown, key=lambda (j: JobView) { risk_rank(j.band); });
+    term = q.strip().lower();
+    minv = float(min_sal or "0");
+    expv = int(exp or "-1");
+    results = [j for j in jobs if (not term or term in (j.title + " " + j.country + " " + j.occupation + " " + j.description).lower())
+        and (not country or j.country == country) and (not occ or j.occupation == occ) and j.salary_lkr >= minv
+        and (expv < 0 or j.experience_years <= expv) and (not ctype or j.contract_type == ctype)];
+    if sort == "salary" {
+        results = sorted(results, key=lambda (j: JobView) { -j.salary_lkr; });
+    } elif sort == "suitability" or sort == "relevance" {
+        results = sorted(results, key=lambda (j: JobView) { -(match_pct(matches, j.id)) + (30 if j.band == "DANGER" else 0); });
     }
-    if sort == "match" {
-        shown = sorted(shown, key=lambda (j: JobView) { -match_pct(matches, j.id); });
-    }
+    active = len([x for x in [country, occ, min_sal != "0", exp != "-1", ctype] if x]);
     countries = sorted(list(set([j.country for j in jobs if j.country])));
-    agencies = len(set([j.licence_no for j in jobs]));
-    high = len([j for j in jobs if j.band == "DANGER"]);
+    occupations = sorted(list(set([j.occupation for j in jobs if j.occupation])));
+    safe_jobs = [j for j in jobs if j.band == "LOOKS SAFE"];
+    featured: list[JobView] = sorted(safe_jobs, key=lambda (j: JobView) { -match_pct(matches, j.id); })[:1];
+    pct = profile_pct();
+    variants = ["salary", "standard", "standard", "salary", "standard"];
     opened = [j for j in jobs if j.id == open_id];
 
     if opened {
         jb = opened[0];
-        return <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-            <button onClick={lambda -> None { open_id = ""; message = ""; last_steps = []; }}
-                style={{"alignSelf": "flex-start", "background": "transparent", "border": "none", "color": PRIMARY, "fontWeight": "600", "cursor": "pointer", "padding": "0"}}>{"← Back to Discover"}</button>
-            <div style={CARD}>
-                <div style={{"display": "flex", "justifyContent": "space-between", "gap": "12px", "flexWrap": "wrap"}}>
-                    <div>
-                        <h2 style={{"margin": "0", "fontSize": "26px"}}>{jb.title + " · " + jb.country}</h2>
-                        <div style={{"color": MUTED_INK, "marginTop": "4px"}}>{f"{jb.agency_name} · SLBFE licence {jb.licence_no} (verified live) · posted {jb.posted_at}"}</div>
+        risk = risk_of(jb.band, jb.score);
+        mv = match_pct(matches, jb.id);
+        deducted = jb.salary_lkr - jb.take_home_lkr;
+        return <article>
+            <button onClick={lambda -> None { open_id = ""; }} className="inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4"/> Discover</button>
+            <header className="mt-6 grid gap-8 lg:grid-cols-[1fr_320px]">
+                <div>
+                    <CountryTag country={jb.country}/>
+                    <h1 className="mt-3 text-4xl font-extrabold leading-[0.95] md:text-6xl">{jb.title}</h1>
+                    <p className="mt-4 text-sm text-muted-foreground"><span className="font-semibold text-foreground">{jb.agency_name}</span>{f" · SLBFE licence {jb.licence_no} · posted {jb.posted_at}"}</p>
+                    <div className="mt-5 flex flex-wrap items-center gap-2">
+                        <button onClick={lambda -> None { enquire = not enquire; }} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"><MessageSquare className="h-4 w-4"/> Enquire</button>
+                        <NotBuilt label="Save / compare"/>
                     </div>
-                    <div style={{"textAlign": "right"}}>
-                        <div style={LABEL}>Monthly salary</div>
-                        <div style={{"fontSize": "22px", "fontWeight": "800"}}>{jb.salary}</div>
+                    {if enquire {
+                        <div className="mt-4 rounded-xl border border-border bg-card p-4 shadow-card rise-in">
+                            <p className="text-sm font-semibold">Ask the agency before paying anything</p>
+                            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
+                                <li>Can I see the full contract before paying anything?</li>
+                                <li>{"What is the employer's registration number?"}</li>
+                                <li>Which fees will I pay, to whom, and will I get a receipt?</li>
+                            </ol>
+                        </div>
+                    }}
+                </div>
+                <div className="rounded-xl border border-border bg-card p-5 shadow-card">
+                    <p className="eyebrow">Monthly salary</p>
+                    <p className="mt-1 font-display text-4xl font-extrabold">{jb.salary}</p>
+                    <p className="text-xs text-muted-foreground">{("≈ " + lkr(jb.salary_lkr) + " at approximate fixed rate") if jb.salary_lkr > 0 else "Not convertible"}</p>
+                    <div className="mt-4 space-y-3 border-t border-border pt-4">
+                        <div><p className="eyebrow mb-1">Safety assessment</p><SafetyIndicator risk={risk}/></div>
+                        <div><p className="eyebrow mb-1">Your match</p>{if mv >= 0 { <MatchMeter value={mv}/> } else { <button onClick={lambda -> None { onProfile(); }} className="text-xs font-semibold text-primary">Add your profile</button> }}</div>
+                        <div><p className="eyebrow mb-1">Status</p><VerifyBadge state="verified" prefix="Licence (live register)"/></div>
                     </div>
                 </div>
-            </div>
-            <div style={{"display": "grid", "gridTemplateColumns": "minmax(0, 7fr) minmax(0, 5fr)", "gap": "16px", "alignItems": "start"}}>
-                <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-                    <div style={{"background": band_bg(jb.band), "border": "1px solid " + band_fg(jb.band), "borderRadius": "14px", "padding": "18px"}}>
-                        <div style={LABEL}>Safety assessment · real agent analysis</div>
-                        <div style={{"fontSize": "24px", "fontWeight": "800", "color": band_fg(jb.band)}}>{f"{band_label(jb.band)} · {jb.score}/100"}</div>
-                        <p style={{"margin": "6px 0 0"}}>{jb.summary or "No summary."}</p>
-                        <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>Separate from any match score. Promotion never changes it.</div>
+            </header>
+            <p className="mt-8 flex items-start gap-2 rounded-lg border border-caution/50 bg-caution-soft px-4 py-3 text-sm"><Info className="mt-0.5 h-4 w-4 shrink-0"/> Verification is not a guarantee of safety. Always confirm your contract with the Sri Lanka Bureau of Foreign Employment before paying or travelling.</p>
+            {[<p key={i} className="mt-3 rounded-lg border border-primary/30 bg-secondary px-4 py-3 text-sm font-semibold text-primary-deep">{"Impersonation alert: " + w}</p> for (i, w) in enumerate(jb.warnings)]}
+            <div className="mt-6">
+                <Section n="01" title="Safety findings">
+                    <div className="mb-2 flex items-center gap-2"><LiveTag label="Real agent analysis"/><span className="text-xs text-muted-foreground">{f"{jb.score}/100 · separate from match score. Promotion never changes it."}</span></div>
+                    {if len(jb.findings) == 0 {
+                        <p className="rounded-xl border border-border bg-card px-4 py-4 text-sm text-muted-foreground">No supported findings. That is not proof the job is safe.</p>
+                    } else {
+                        <ul className="rounded-xl border border-border bg-card px-4">
+                            {[<FindingItem key={i} title={f.title} risk={finding_risk(f.points)} kind={finding_kind(f.source)} source={f.source} excerpt={f.evidence} why={f.explanation} open_default={i == 0}/> for (i, f) in enumerate(jb.findings)]}
+                        </ul>
+                    }}
+                    <p className="mt-2 text-sm text-muted-foreground">{jb.summary}</p>
+                    {[<p key={k} className="mt-2 text-xs font-semibold text-primary-deep">{"Appeal " + ap}</p> for (k, ap) in enumerate(jb.appeals)]}
+                    <details className="mt-3 text-sm"><summary className="cursor-pointer font-semibold">Full job description</summary><p className="mt-2 whitespace-pre-wrap text-muted-foreground">{jb.description}</p></details>
+                </Section>
+                <Section n="02" title="Pay & deductions">
+                    <table className="w-full text-sm"><tbody className="divide-y divide-border">
+                        <tr><td className="py-2">Basic salary</td><td className="py-2 text-right font-mono">{jb.salary}</td></tr>
+                        <tr><td className="py-2 text-muted-foreground">{"− " + (jb.deductions or "Deductions")}</td><td className="py-2 text-right font-mono">{lkr(deducted) if deducted > 0 else "None disclosed"}</td></tr>
+                        <tr className="font-semibold"><td className="py-2">Estimated take-home</td><td className="py-2 text-right font-mono">{lkr(jb.take_home_lkr) if jb.take_home_lkr > 0 else "Not enough data"}</td></tr>
+                        <tr><td className="py-2">Recruitment fee to you</td><td className={"py-2 text-right font-mono " + ("font-semibold text-risk" if jb.worker_fee_lkr > 150000 else "")}>{lkr(jb.worker_fee_lkr) if jb.worker_fee_lkr > 0 else "None stated"}</td></tr>
+                        <tr><td className="py-2">Accommodation</td><td className="py-2 text-right">{jb.accommodation or "Not stated"}</td></tr>
+                    </tbody></table>
+                    {[<p key={k} className="mt-2 text-xs text-muted-foreground">{"Correction requested " + c}</p> for (k, c) in enumerate(jb.corrections)]}
+                </Section>
+                <Section n="03" title="Visa & contract">
+                    <dl className="grid gap-4 sm:grid-cols-3">
+                        <div><dt className="eyebrow">Occupation</dt><dd className="mt-1 font-semibold">{jb.occupation or "—"}</dd></div>
+                        <div><dt className="eyebrow">Contract</dt><dd className="mt-1 font-semibold">{(jb.contract_type or "—") + (f" · {jb.contract_months} months" if jb.contract_months else "")}</dd></div>
+                        <div><dt className="eyebrow">Experience</dt><dd className="mt-1 font-semibold">{f"{jb.experience_years}+ years" if jb.experience_years else "None required"}</dd></div>
+                    </dl>
+                </Section>
+                <Section n="04" title="Why it matches">
+                    {if mv >= 0 {
+                        <div>
+                            <ul className="space-y-2">{[<li key={k} className="flex gap-2 text-sm"><span className="mt-2 h-1 w-3 bg-primary"></span>{r}</li> for (k, r) in enumerate(match_reasons(matches, jb.id))]}</ul>
+                            <ul className="mt-2 space-y-2">{[<li key={k} className="flex gap-2 text-sm text-risk"><span className="mt-2 h-1 w-3 bg-risk"></span>{c}</li> for (k, c) in enumerate(match_cautions(matches, jb.id))]}</ul>
+                        </div>
+                    } else {
+                        <button onClick={lambda -> None { onProfile(); }} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Add your profile to see why it matches</button>
+                    }}
+                    <p className="mt-3 text-xs text-muted-foreground">Based on your profile. A high match does not mean a job is safe.</p>
+                </Section>
+                <Section n="05" title="Who's behind it">
+                    <div className="rounded-xl border border-border bg-card p-4">
+                        <p className="eyebrow">Recruitment agency</p>
+                        <p className="mt-1 font-semibold">{jb.agency_name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{f"SLBFE licence {jb.licence_no}, checked on the live register when this job was posted. Contact given: {jb.contact_phone}"}</p>
+                        <div className="mt-3 flex items-center justify-between"><VerifyBadge state="verified"/><span className="text-xs text-muted-foreground">{f"{len(jb.reviews)} moderated reports"}</span></div>
                     </div>
-                    {[<div key={i} style={{"background": "#f5eef8", "border": "1px solid #c4a7e7", "borderRadius": "12px", "padding": "12px", "color": "#4c1d95", "fontWeight": "600"}}>{"Impersonation alert: " + w}</div> for (i, w) in enumerate(jb.warnings)]}
-                    <div style={CARD}>
-                        <div style={LABEL}>{f"Safety findings ({len(jb.top_flags)})"}</div>
-                        {if len(jb.top_flags) == 0 {
-                            <p style={{"color": MUTED_INK}}>No supported findings.</p>
-                        }}
-                        <ul style={{"paddingLeft": "18px"}}>{[<li key={i} style={{"marginBottom": "4px"}}>{f}</li> for (i, f) in enumerate(jb.top_flags)]}</ul>
-                    </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>Full job description</div>
-                        <p style={{"margin": "6px 0 0", "whiteSpace": "pre-wrap"}}>{jb.description}</p>
-                    </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>Pay & deductions</div>
-                        <table style={{"width": "100%", "fontSize": "14px", "marginTop": "6px", "borderCollapse": "collapse"}}><tbody>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Basic salary</td><td>{jb.salary + (" (≈ " + money(jb.salary_lkr) + ")" if jb.salary_lkr > 0 else "")}</td></tr>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Deductions</td><td>{jb.deductions or "none disclosed"}</td></tr>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Estimated take-home</td><td style={{"fontWeight": "700"}}>{money(jb.take_home_lkr) + " / month"}</td></tr>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Recruitment fee to you</td><td>{money(jb.worker_fee_lkr) if jb.worker_fee_lkr > 0 else "none stated"}</td></tr>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Accommodation</td><td>{jb.accommodation or "not stated"}</td></tr>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Contract</td><td>{((jb.contract_type + " · ") if jb.contract_type else "") + (f"{jb.contract_months} months" if jb.contract_months else "length not stated")}</td></tr>
-                            <tr><td style={{"color": MUTED_INK, "padding": "3px 0"}}>Experience</td><td>{f"{jb.experience_years} year(s)" if jb.experience_years else "none required"}</td></tr>
-                        </tbody></table>
-                        <div style={{"fontSize": "12px", "color": MUTED_INK, "marginTop": "6px"}}>LKR figures use approximate fixed exchange rates.</div>
-                        {[<div key={k} style={{"fontSize": "13px", "color": PRIMARY_DEEP, "marginTop": "6px"}}>{"Appeal " + ap}</div> for (k, ap) in enumerate(jb.appeals)]}
-                        {[<div key={k} style={{"fontSize": "13px", "color": MUTED_INK, "marginTop": "4px"}}>{"Correction requested " + c}</div> for (k, c) in enumerate(jb.corrections)]}
-                    </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>{f"Moderated worker reports ({len(jb.reviews)})"}</div>
-                        {if jb.credible_fraud_reports > 0 {
-                            <div style={{"color": RISK, "fontWeight": "700", "marginTop": "6px"}}>{f"{jb.credible_fraud_reports} credible fraud report(s) against the agency"}</div>
+                </Section>
+                <Section n="06" title="Worker reports">
+                    <ul className="divide-y divide-border rounded-xl border border-border bg-card px-4">
+                        {if len(jb.reviews) == 0 {
+                            <li className="py-4 text-sm text-muted-foreground">No reports yet.</li>
                         }}
                         {[
-                            <div key={i} style={{"padding": "10px 0", "borderBottom": "1px solid " + MUTED, "fontSize": "14px"}}>
-                                <div style={{"display": "flex", "gap": "6px", "flexWrap": "wrap", "alignItems": "center"}}>
-                                    <b>{rv.author}</b>
-                                    <span style={{"background": RISK_SOFT if rv.kind == "fraud" else "#e5f5ec", "borderRadius": "6px", "padding": "1px 7px", "fontSize": "11px"}}>{rv.kind}</span>
-                                    <span style={{"background": ACCENT, "borderRadius": "6px", "padding": "1px 7px", "fontSize": "11px"}}>{f"Review Verifier: {rv.status} · {rv.credibility}/100"}</span>
-                                    <span style={{"color": MUTED_INK, "fontSize": "12px"}}>{rv.created_at}</span>
+                            <li key={rv.id} className="py-4 text-sm">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-semibold">{rv.author}</span>
+                                    <span className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " + ("bg-risk-soft text-risk" if rv.kind == "fraud" else "bg-safe-soft text-safe")}>{rv.kind}</span>
+                                    <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">{f"Review Verifier: {rv.status} · {rv.credibility}/100"}</span>
+                                    <span className="font-mono text-[11px] text-muted-foreground">{rv.created_at}</span>
                                 </div>
-                                <div style={{"marginTop": "4px"}}>{rv.text}</div>
+                                <p className="mt-1">{rv.text}</p>
                                 {if rv.evidence {
-                                    <div style={{"color": MUTED_INK, "fontStyle": "italic"}}>{"Evidence: " + rv.evidence}</div>
+                                    <p className="mt-1 font-mono text-xs text-muted-foreground">{"Evidence: " + rv.evidence}</p>
                                 }}
-                                <div style={{"color": MUTED_INK, "fontSize": "12px"}}>{rv.reason}</div>
+                                <p className="mt-1 text-xs text-muted-foreground">{rv.reason}</p>
                                 {if rv.agency_response {
-                                    <div style={{"marginTop": "6px", "background": ACCENT, "borderRadius": "8px", "padding": "6px 10px", "fontSize": "13px"}}><b>Agency response: </b>{rv.agency_response}</div>
+                                    <p className="mt-2 rounded-md bg-secondary px-3 py-2 text-xs"><span className="font-semibold text-primary-deep">Agency response: </span>{rv.agency_response}</p>
                                 }}
                                 {if respond_id == rv.id {
-                                    <div style={{"display": "flex", "gap": "6px", "marginTop": "6px"}}>
-                                        <input placeholder="Agency response" value={respond_text} onChange={lambda (e: ChangeEvent) { respond_text = e.target.value; }}
-                                            style={{"flex": "1", "padding": "7px", "borderRadius": "8px", "border": "1px solid " + BORDER}}/>
-                                        <button onClick={lambda { respond(); }} style={{"background": PRIMARY, "color": "white", "border": "none", "borderRadius": "8px", "padding": "6px 12px"}}>Publish</button>
+                                    <div className="mt-2 flex gap-2">
+                                        <input value={respond_text} onChange={lambda (e: ChangeEvent) { respond_text = e.target.value; }} placeholder="Agency response" className={SEL + " flex-1"}/>
+                                        <button onClick={lambda { respond(); }} className="rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground">Publish</button>
                                     </div>
                                 } elif not rv.agency_response {
-                                    <button onClick={lambda -> None { respond_id = rv.id; }} style={{"marginTop": "6px", "background": "transparent", "border": "none", "color": PRIMARY, "fontSize": "12px", "cursor": "pointer", "padding": "0"}}>Respond as agency</button>
+                                    <button onClick={lambda -> None { respond_id = rv.id; }} className="mt-2 text-xs font-semibold text-primary">Respond as agency</button>
                                 }}
-                            </div>
-                            for (i, rv) in enumerate(jb.reviews)
+                            </li>
+                            for rv in jb.reviews
                         ]}
-                    </div>
-                </div>
-                <div style={{"display": "flex", "flexDirection": "column", "gap": "16px"}}>
-                    <div style={CARD}>
-                        <div style={LABEL}>{"Who's behind it"}</div>
-                        <div style={{"fontWeight": "700", "marginTop": "6px"}}>{jb.agency_name}</div>
-                        <div style={{"fontSize": "14px"}}>{f"SLBFE licence {jb.licence_no} · checked on the live register when posted"}</div>
-                        <div style={{"fontSize": "14px", "color": MUTED_INK}}>{"Contact given: " + jb.contact_phone}</div>
-                    </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>Report or review this job</div>
-                        <input placeholder="Your name (optional)" value={review_author} onChange={lambda (e: ChangeEvent) { review_author = e.target.value; }}
-                            style={{"width": "100%", "boxSizing": "border-box", "padding": "8px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "8px"}}/>
-                        <select value={review_kind} onChange={lambda (e: ChangeEvent) { review_kind = e.target.value; }}
-                            style={{"width": "100%", "padding": "8px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "8px"}}>
-                            <option value="fraud">Report fraud</option>
-                            <option value="positive">Positive experience</option>
-                            <option value="other">Other</option>
-                        </select>
-                        <textarea rows={3} placeholder="What happened? Amounts, dates, what was promised. Don't include your NIC or passport number." value={review_text} onChange={lambda (e: ChangeEvent) { review_text = e.target.value; }}
-                            style={{"width": "100%", "boxSizing": "border-box", "padding": "8px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "8px", "fontFamily": "inherit"}}/>
-                        <textarea rows={2} placeholder="Evidence: receipt, bank slip details, chat excerpt" value={review_evidence} onChange={lambda (e: ChangeEvent) { review_evidence = e.target.value; }}
-                            style={{"width": "100%", "boxSizing": "border-box", "padding": "8px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "8px", "fontFamily": "inherit"}}/>
-                        <button disabled={reviewing} onClick={lambda { submit_review(); }}
-                            style={{"marginTop": "8px", "width": "100%", "background": PRIMARY, "color": "white", "border": "none", "borderRadius": "10px", "padding": "10px", "fontWeight": "700"}}>
-                            {"Review Verifier checking..." if reviewing else "Submit for verification"}
-                        </button>
-                        {if message {
-                            <div style={{"marginTop": "10px", "fontSize": "13px"}}>
-                                <b>{message}</b>
-                                <ol style={{"paddingLeft": "18px"}}>{[<li key={i}><b>{s.agent}</b>{": " + s.detail}</li> for (i, s) in enumerate(last_steps)]}</ol>
+                    </ul>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+                            <p className="font-semibold">Report or review this job</p>
+                            <div className="mt-3 space-y-2">
+                                <input value={review_author} onChange={lambda (e: ChangeEvent) { review_author = e.target.value; }} placeholder="Your name (optional)" className={SEL + " w-full"}/>
+                                <select value={review_kind} onChange={lambda (e: ChangeEvent) { review_kind = e.target.value; }} className={SEL + " w-full"}>
+                                    <option value="fraud">Report fraud</option><option value="positive">Positive experience</option><option value="other">Other</option>
+                                </select>
+                                <textarea rows={3} value={review_text} onChange={lambda (e: ChangeEvent) { review_text = e.target.value; }} placeholder="What happened? Amounts, dates, what was promised." className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm"/>
+                                <textarea rows={2} value={review_evidence} onChange={lambda (e: ChangeEvent) { review_evidence = e.target.value; }} placeholder="Evidence: receipt, bank slip details, chat excerpt" className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm"/>
+                                <p className="text-[11px] text-muted-foreground">{"Don't include your NIC, passport number or phone number."}</p>
+                                <button disabled={reviewing} onClick={lambda { submit_review(); }} className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">{"Review Verifier checking..." if reviewing else "Submit for moderation"}</button>
                             </div>
-                        }}
+                        </div>
+                        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+                            <p className="font-semibold">Request a correction</p>
+                            <textarea rows={3} value={correction} onChange={lambda (e: ChangeEvent) { correction = e.target.value; }} placeholder="What is wrong in this listing?" className="mt-3 w-full rounded-md border border-input bg-card px-3 py-2 text-sm"/>
+                            <button onClick={lambda { request_correction(); }} className="mt-2 rounded-md border border-border px-4 py-2 text-sm font-semibold">Send for moderation</button>
+                            {if message {
+                                <div className="mt-4 rounded-md bg-secondary p-3 text-xs">
+                                    <p className="font-semibold text-primary-deep">{message}</p>
+                                    <ol className="mt-1 list-decimal pl-4">{[<li key={k}><span className="font-semibold">{s.agent}</span>{": " + s.detail}</li> for (k, s) in enumerate(last_steps)]}</ol>
+                                </div>
+                            }}
+                        </div>
                     </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>Enquire about this job</div>
-                        <ul style={{"paddingLeft": "18px", "fontSize": "14px"}}>
-                            <li>Can I see the full contract before paying anything?</li>
-                            <li>What is the employer's registration number?</li>
-                            <li>Which fees will I pay, to whom, and will I get a receipt?</li>
-                        </ul>
-                    </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>Why it matches</div>
-                        {if match_pct(matches, jb.id) >= 0 {
-                            <div style={{"fontSize": "14px"}}>
-                                <div style={{"fontSize": "22px", "fontWeight": "800", "color": PRIMARY_DEEP}}>{f"{match_pct(matches, jb.id)}% match"}</div>
-                                <ul style={{"paddingLeft": "18px"}}>{[<li key={k}>{r}</li> for (k, r) in enumerate(match_reasons(matches, jb.id))]}</ul>
-                                <ul style={{"paddingLeft": "18px", "color": RISK}}>{[<li key={k}>{c}</li> for (k, c) in enumerate(match_cautions(matches, jb.id))]}</ul>
-                                <div style={{"fontSize": "12px", "color": MUTED_INK}}>Based on your profile. A high match does not mean a job is safe.</div>
-                            </div>
-                        } else {
-                            <button onClick={lambda -> None { onProfile(); }} style={{"background": ACCENT, "color": PRIMARY_DEEP, "border": "none", "borderRadius": "8px", "padding": "7px 12px", "fontWeight": "600", "marginTop": "6px"}}>Add your profile to see why it matches</button>
-                        }}
-                    </div>
-                    <div style={CARD}>
-                        <div style={LABEL}>Request a correction</div>
-                        <textarea rows={2} placeholder="What is wrong in this listing?" value={correction} onChange={lambda (e: ChangeEvent) { correction = e.target.value; }}
-                            style={{"width": "100%", "boxSizing": "border-box", "padding": "8px", "borderRadius": "8px", "border": "1px solid " + BORDER, "marginTop": "8px", "fontFamily": "inherit"}}/>
-                        <button onClick={lambda { request_correction(); }} style={{"marginTop": "6px", "background": MUTED, "border": "1px solid " + BORDER, "borderRadius": "8px", "padding": "6px 12px"}}>Send for moderation</button>
-                    </div>
-                </div>
+                </Section>
             </div>
-        </div>;
+        </article>;
     }
 
-    return <div style={{"display": "grid", "gridTemplateColumns": "minmax(0, 8fr) minmax(0, 4fr)", "gap": "18px", "alignItems": "start"}}>
-        <div style={{"display": "flex", "flexDirection": "column", "gap": "14px"}}>
+    return <div>
+        <section className="grid gap-6 lg:grid-cols-[1fr_280px] lg:items-end">
             <div>
-                <h1 style={{"fontSize": "32px", "margin": "0 0 4px", "letterSpacing": "-0.5px"}}>Find work abroad, <span style={{"color": PRIMARY}}>with confidence.</span></h1>
-                <p style={{"color": MUTED_INK, "margin": "0"}}>Every listing comes from an agency verified on the live SLBFE register, and every posting is investigated by the agent team.</p>
+                <p className="eyebrow">{"Ayubowan" + ((", " + prof("name", "")) if prof("name", "") else "") + " · Sat 17 Oct"}</p>
+                <h1 className="mt-3 text-5xl font-extrabold leading-[0.9] md:text-7xl">Your next chapter<br/>abroad, <span className="text-primary">with confidence.</span></h1>
+                <p className="mt-4 max-w-xl text-base text-muted-foreground">Discover opportunities. Verify the people behind them. Make your move with evidence.</p>
             </div>
-            <div style={{"display": "flex", "gap": "8px", "flexWrap": "wrap"}}>
-                <input placeholder="Occupation, destination or keyword, e.g. driver or Qatar" value={query} onChange={lambda (e: ChangeEvent) { query = e.target.value; }}
-                    style={{"flex": "1", "minWidth": "220px", "padding": "11px 14px", "borderRadius": "10px", "border": "1px solid " + BORDER, "fontSize": "14px"}}/>
-                <select value={country} onChange={lambda (e: ChangeEvent) { country = e.target.value; }}
-                    style={{"padding": "10px", "borderRadius": "10px", "border": "1px solid " + BORDER}}>
-                    <option value="">Any destination</option>
-                    {[<option key={c} value={c}>{c}</option> for c in countries]}
-                </select>
-                <select value={sort} onChange={lambda (e: ChangeEvent) { sort = e.target.value; }}
-                    style={{"padding": "10px", "borderRadius": "10px", "border": "1px solid " + BORDER}}>
-                    <option value="recent">Most recent</option>
-                    <option value="risk">Lowest risk first</option>
-                    <option value="match">Best match</option>
-                </select>
+            <button onClick={lambda -> None { onProfile(); }} className="group rounded-xl border border-border bg-card p-4 text-left shadow-card">
+                <div className="flex items-baseline justify-between"><span className="eyebrow">Profile</span><span className="font-mono text-sm font-semibold">{f"{pct}%"}</span></div>
+                <div className="mt-2 flex gap-1">{[<span key={i} className={"h-1.5 flex-1 rounded-sm " + ("bg-primary" if i < round(pct / 12.5) else "bg-secondary")}></span> for i in range(8)]}</div>
+                <p className="mt-2 text-xs text-muted-foreground group-hover:text-foreground">Add work preferences to sharpen matches <ArrowRight className="inline h-3 w-3"/></p>
+            </button>
+        </section>
+
+        <section className="mt-8 rounded-xl border border-border bg-card p-2 shadow-card">
+            <div className="flex flex-col gap-2 md:flex-row">
+                <label className="flex flex-1 items-center gap-2 px-3">
+                    <Search className="h-5 w-5 text-muted-foreground"/>
+                    <input value={q} onChange={lambda (e: ChangeEvent) { q = e.target.value; }} placeholder="Occupation, destination or keyword — try “driver” or “Qatar”" className="h-12 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground"/>
+                </label>
+                <div className="flex gap-2">
+                    <button onClick={lambda -> None { show_filters = not show_filters; }} className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold md:flex-none">
+                        <SlidersHorizontal className="h-4 w-4"/> Filters {if active > 0 { <span className="rounded bg-primary px-1.5 font-mono text-[11px] text-primary-foreground">{str(active)}</span> }}
+                    </button>
+                    <select value={sort} onChange={lambda (e: ChangeEvent) { sort = e.target.value; }} className={SEL + " h-12 flex-1 md:flex-none"}>
+                        <option value="relevance">Relevance</option><option value="salary">Highest salary</option><option value="recent">Most recent</option><option value="suitability">Best suitability</option>
+                    </select>
+                </div>
             </div>
-            {if loading and len(jobs) == 0 {
-                <p style={{"color": MUTED_INK}}>Loading listings...</p>
+            {if show_filters {
+                <div className="grid gap-3 border-t border-border p-3 sm:grid-cols-2 lg:grid-cols-5 rise-in">
+                    <select value={country} onChange={lambda (e: ChangeEvent) { country = e.target.value; }} className={SEL}><option value="">Any destination</option>{[<option key={c} value={c}>{c}</option> for c in countries]}</select>
+                    <select value={occ} onChange={lambda (e: ChangeEvent) { occ = e.target.value; }} className={SEL}><option value="">Any occupation</option>{[<option key={c} value={c}>{c}</option> for c in occupations]}</select>
+                    <select value={min_sal} onChange={lambda (e: ChangeEvent) { min_sal = e.target.value; }} className={SEL}><option value="0">Any salary</option><option value="150000">≥ LKR 150k</option><option value="200000">≥ LKR 200k</option><option value="300000">≥ LKR 300k</option></select>
+                    <select value={exp} onChange={lambda (e: ChangeEvent) { exp = e.target.value; }} className={SEL}><option value="-1">Any experience</option><option value="0">No experience</option><option value="1">Up to 1 yr</option><option value="3">Up to 3 yrs</option></select>
+                    <select value={ctype} onChange={lambda (e: ChangeEvent) { ctype = e.target.value; }} className={SEL}><option value="">Any contract</option><option value="Fixed term">Fixed term</option><option value="Renewable">Renewable</option><option value="Seasonal">Seasonal</option></select>
+                </div>
             }}
-            {if not loading and len(shown) == 0 {
-                <div style={CARD}><p style={{"margin": "0", "color": MUTED_INK}}>No listings yet. Licensed agencies can post from the Agency portal.</p></div>
-            }}
-            {[
-                <div key={j.id} style={CARD}>
-                    <div style={{"display": "flex", "justifyContent": "space-between", "gap": "12px", "flexWrap": "wrap"}}>
-                        <div>
-                            <div style={{"fontSize": "18px", "fontWeight": "700"}}>{j.title + " · " + j.country}</div>
-                            <div style={{"color": MUTED_INK, "fontSize": "13px", "marginTop": "2px"}}>{f"{j.agency_name} · posted {j.posted_at}"}</div>
+        </section>
+
+        {if not term and active == 0 {
+            <section className="mt-10 grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+                {if len(featured) > 0 {
+                    <button onClick={lambda -> None { open_job(featured[0].id); }} className="group relative overflow-hidden rounded-2xl bg-ink p-7 text-left text-ink-foreground grid-lines md:p-9">
+                        <div className="flex items-start justify-between"><span className="eyebrow text-sky">{"Strongest match this week" if match_pct(matches, featured[0].id) >= 0 else "Verified listing"}</span></div>
+                        <div className="mt-10 grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+                            <div>
+                                <p className="font-mono text-xs text-sky">{featured[0].country[:2].upper() + " — " + featured[0].country}</p>
+                                <h2 className="mt-2 text-4xl font-bold leading-[0.95] md:text-5xl">{featured[0].title}</h2>
+                                <p className="mt-4 max-w-md text-sm text-ink-foreground/70">{". ".join(match_reasons(matches, featured[0].id)) or featured[0].description[:140]}</p>
+                            </div>
+                            <div className="md:text-right">
+                                <p className="font-display text-5xl font-extrabold">{featured[0].salary}</p>
+                                <p className="font-mono text-xs text-ink-foreground/60">{"per month · " + ("no fee charged" if featured[0].worker_fee_lkr == 0 else lkr(featured[0].worker_fee_lkr) + " fee")}</p>
+                            </div>
                         </div>
-                        <div style={{"fontWeight": "800"}}>{j.salary}</div>
-                    </div>
-                    <div style={{"display": "flex", "gap": "8px", "flexWrap": "wrap", "marginTop": "10px", "alignItems": "center"}}>
-                        <span style={{"background": band_bg(j.band), "color": band_fg(j.band), "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "700"}}>{f"Safety: {band_label(j.band)} · {j.score}"}</span>
-                        <span style={{"background": ACCENT, "color": PRIMARY_DEEP, "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "600"}}>{f"Licence {j.licence_no}: verified live"}</span>
-                        {if j.credible_fraud_reports > 0 {
-                            <span style={{"background": RISK_SOFT, "color": RISK, "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "700"}}>{f"{j.credible_fraud_reports} credible fraud report(s)"}</span>
-                        }}
-                        {if len(j.warnings) > 0 {
-                            <span style={{"background": "#f5eef8", "color": "#6d28d9", "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "700"}}>Impersonators reported</span>
-                        }}
-                        {if match_pct(matches, j.id) >= 0 {
-                            <span style={{"background": "#eef2ff", "color": PRIMARY_DEEP, "borderRadius": "999px", "padding": "3px 10px", "fontSize": "12px", "fontWeight": "700"}}>{f"Match: {match_pct(matches, j.id)}%"}</span>
-                        }}
-                        {if j.salary_lkr > 0 {
-                            <span style={{"color": MUTED_INK, "fontSize": "12px"}}>{"≈ " + money(j.salary_lkr) + " / month"}</span>
-                        }}
-                        <button onClick={lambda -> None { open_id = j.id; message = ""; last_steps = []; }}
-                            style={{"marginLeft": "auto", "background": PRIMARY, "color": "white", "border": "none", "borderRadius": "8px", "padding": "7px 14px", "fontWeight": "600", "cursor": "pointer"}}>Open</button>
-                    </div>
+                        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-ink-foreground/15 pt-4 text-xs">
+                            <span>Safety: <b className="text-sky">Low risk</b></span>
+                            {if match_pct(matches, featured[0].id) >= 0 { <span>Match: <b className="text-sky">{f"{match_pct(matches, featured[0].id)}%"}</b></span> }}
+                            <span>Licence: <b className="text-sky">Verified (live register)</b></span>
+                            <span className="ml-auto inline-flex items-center gap-1 font-semibold">Open <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1"/></span>
+                        </div>
+                    </button>
+                } else {
+                    <EmptyState title="No verified listings yet" body="Licensed agencies can post from the Agency portal."/>
+                }}
+                <aside className="rounded-2xl border border-border bg-card p-6 shadow-card">
+                    <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Trust intelligence</h2><LiveTag/></div>
+                    <dl className="mt-5 grid grid-cols-3 divide-x divide-border border-y border-border py-4 text-center">
+                        <div><dd className="font-display text-3xl font-bold">{str(len(jobs) + len(checks))}</dd><dt className="eyebrow mt-1">Checked</dt></div>
+                        <div><dd className="font-display text-3xl font-bold">{str(len(set([j.licence_no for j in jobs])))}</dd><dt className="eyebrow mt-1">Agencies</dt></div>
+                        <div><dd className="font-display text-3xl font-bold text-risk">{str(len([c for c in checks if c.verdict == "DANGER"]) + len([j for j in jobs if j.band == "DANGER"]))}</dd><dt className="eyebrow mt-1">High risk</dt></div>
+                    </dl>
+                    <ol className="mt-4 space-y-3">
+                        {[<li key={c.id} className="grid grid-cols-[auto_1fr] gap-3 text-xs"><span className="font-mono text-muted-foreground">{c.created_at[11:16]}</span><span>{f"{c.job or 'Offer'} in {c.country or '?'} checked → {c.verdict}" + (f" · {len(c.alerts)} alert(s)" if c.alerts else "")}</span></li> for c in checks[:5]]}
+                    </ol>
+                    <button onClick={lambda -> None { onCheck(); }} className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-primary">Check an offer you received <ArrowRight className="h-3.5 w-3.5"/></button>
+                </aside>
+            </section>
+        }}
+
+        <section className="mt-12">
+            <div className="mb-4 flex items-baseline justify-between">
+                <h2 className="text-2xl font-bold">{"Results" if (term or active) else "Recommended for you"} <span className="font-mono text-sm font-normal text-muted-foreground">{str(len(results))}</span></h2>
+                {if term or active > 0 { <button onClick={lambda -> None { reset(); }} className="inline-flex items-center gap-1 text-sm font-semibold text-primary"><X className="h-3.5 w-3.5"/> Clear</button> }}
+            </div>
+            {if len(results) == 0 and not loading {
+                <EmptyState title="No roads lead here — yet" body="No jobs match these filters. Try widening the destination or salary range."/>
+            } else {
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {[<JobCard key={j.id} job={j} matchv={match_pct(matches, j.id)} reasons={match_reasons(matches, j.id)} variant={"wide" if (i == 0 and not term and active == 0) else variants[i % 5]} onOpen={open_job}/> for (i, j) in enumerate(results)]}
                 </div>
-                for j in shown
-            ]}
-        </div>
-        <div style={{"display": "flex", "flexDirection": "column", "gap": "14px"}}>
-            <div style={CARD}>
-                <div style={LABEL}>Trust intelligence</div>
-                <div style={{"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr", "gap": "8px", "marginTop": "10px", "textAlign": "center"}}>
-                    <div><div style={{"fontSize": "22px", "fontWeight": "800"}}>{str(len(jobs))}</div><div style={{"fontSize": "12px", "color": MUTED_INK}}>Listings</div></div>
-                    <div><div style={{"fontSize": "22px", "fontWeight": "800"}}>{str(agencies)}</div><div style={{"fontSize": "12px", "color": MUTED_INK}}>Agencies</div></div>
-                    <div><div style={{"fontSize": "22px", "fontWeight": "800", "color": RISK}}>{str(high)}</div><div style={{"fontSize": "12px", "color": MUTED_INK}}>High risk</div></div>
-                </div>
-            </div>
-            <div style={{"background": PRIMARY_DEEP, "color": "white", "borderRadius": "14px", "padding": "18px"}}>
-                <div style={{"fontWeight": "800", "fontSize": "17px"}}>Got an offer on WhatsApp or Facebook?</div>
-                <p style={{"opacity": "0.85", "fontSize": "14px"}}>Most scams never appear on a job board. Paste it and let the agents check it.</p>
-                <button onClick={lambda -> None { onCheck(); }}
-                    style={{"background": "white", "color": PRIMARY_DEEP, "border": "none", "borderRadius": "8px", "padding": "9px 14px", "fontWeight": "700", "cursor": "pointer"}}>Check an offer you received</button>
-            </div>
-            <div style={CARD}>
-                <div style={LABEL}>Your profile</div>
-                <p style={{"fontSize": "14px", "color": MUTED_INK}}>{("Matching for " + (prof("occupation", "") or "your profile") + ". Listings show a match % and the reasons.") if prof("saved", "") == "yes" else "Add your occupation, skills and destinations to see a match % on every listing."}</p>
-                <button onClick={lambda -> None { onProfile(); }} style={{"background": ACCENT, "color": PRIMARY_DEEP, "border": "none", "borderRadius": "8px", "padding": "7px 12px", "fontWeight": "600"}}>{"Edit profile" if prof("saved", "") == "yes" else "Add work preferences"}</button>
-            </div>
-        </div>
+            }}
+        </section>
     </div>;
 }

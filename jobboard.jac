@@ -36,7 +36,8 @@ node Job {
         soft_flags: list[str] = [],
         hard_points: int = 0,
         appeals: list[str] = [],
-        corrections: list[str] = [];
+        corrections: list[str] = [],
+        findings_raw: list[str] = [];
 }
 
 node Review {
@@ -63,6 +64,27 @@ obj ReviewView {
         reason: str,
         created_at: str,
         agency_response: str = "";
+}
+
+obj FindingView {
+    has title: str,
+        points: int,
+        evidence: str,
+        explanation: str,
+        source: str;
+}
+
+glob SEP = " ||| ";
+
+def _decode_findings(raw: list[str]) -> list[FindingView] {
+    out: list[FindingView] = [];
+    for r in raw {
+        p = r.split(SEP);
+        if len(p) == 5 {
+            out.append(FindingView(title=p[0], points=int(p[1]), evidence=p[2], explanation=p[3], source=p[4]));
+        }
+    }
+    return out;
 }
 
 obj JobView {
@@ -95,7 +117,8 @@ obj JobView {
         worker_fee_lkr: float = 0.0,
         appeals: list[str] = [],
         corrections: list[str] = [],
-        appealable: list[str] = [];
+        appealable: list[str] = [],
+        findings: list[FindingView] = [];
 }
 
 obj PostResult {
@@ -152,7 +175,7 @@ def job_view(j: Job) -> JobView {
         occupation=j.occupation, experience_years=j.experience_years, contract_type=j.contract_type, contract_months=j.contract_months,
         accommodation=j.accommodation, deductions=j.deductions, salary_amount=amount, salary_currency=cur,
         salary_lkr=max(lkr, 0.0), take_home_lkr=max(lkr - deduct_lkr, 0.0) if lkr > 0 else 0.0, worker_fee_lkr=j.worker_fee_lkr, appeals=j.appeals,
-        corrections=j.corrections, appealable=[f.split("|")[0] for f in j.soft_flags]);
+        corrections=j.corrections, appealable=[f.split("|")[0] for f in j.soft_flags], findings=_decode_findings(j.findings_raw));
 }
 
 walker:pub PostJob {
@@ -205,6 +228,7 @@ walker:pub PostJob {
             job.summary = c.judge;
             job.top_flags = [f"{f.title} (+{f.points})" for f in c.flags];
             job.soft_flags = [f"{f.title}|{f.points}" for f in c.flags if f.source == SRC_AGENT];
+            job.findings_raw = [SEP.join([f.title, str(f.points), f.evidence.replace(SEP, " "), f.explanation.replace(SEP, " "), f.source]) for f in c.flags];
             job.hard_points = c.hard_points;
         }
         root ++> job;
@@ -430,6 +454,7 @@ walker:pub AppealFinding {
         if d.accept {
             job.soft_flags = [f for f in job.soft_flags if f.split("|")[0] != self.finding];
             job.top_flags = [f for f in job.top_flags if not f.startswith(self.finding + " (")];
+            job.findings_raw = [r for r in job.findings_raw if not r.startswith(self.finding + SEP)];
             _rescore(job);
         }
         job.appeals = job.appeals + [f"{_now()} · {self.finding}: {'accepted' if d.accept else 'rejected'}. {d.reason}"];
