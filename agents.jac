@@ -12,7 +12,7 @@ import from rules {
     SRC_REGISTER, SRC_AGENT, SRC_COMMUNITY, SRC_GUIDANCE, GENERAL_GUIDANCE,
     country_note, critic, dedupe, score_flags,
     find_phones, find_emails, find_licence, find_visa_word,
-    SRC_SALARY, to_lkr, salary_flag
+    SRC_SALARY, to_lkr, salary_flag, licence_expiry_flag, text_similarity
 }
 import from slbfe { AgencyRecord, RegisterResult, search_by_licence, search_by_name, normalise_phone }
 
@@ -326,6 +326,7 @@ walker:pub Investigate {
         community_flags: list[RedFlag] = [],
         questions: list[str] = [],
         licence_not_found: bool = False,
+        repost_flags: list[RedFlag] = [],
         quiet: bool = False;
     has st: CaseState postinit;
 
@@ -504,6 +505,13 @@ walker:pub Investigate {
                     source=SRC_REGISTER, agent="Lead Investigator")
             );
         }
+        if self.st.agency is not None and self.register_status == RegisterStatus.VERIFIED {
+            exp = licence_expiry_flag(self.st.agency.valid_upto, self.st.agency.name, datetime.now().strftime("%Y-%m-%d"));
+            for f in exp {
+                self.log("Supervisor", "licence_expiry", f.evidence);
+            }
+            self.register_flags.extend(exp);
+        }
         if self.st.agency is not None and self.st.facts is not None and self.register_status == RegisterStatus.VERIFIED {
             ag = self.st.agency;
             odd = [p for p in [normalise_phone(x) for x in self.st.facts.phones] if p and p not in ag.phones];
@@ -574,6 +582,41 @@ walker:pub Investigate {
             self.log("Supervisor", "cross_check", "Extractor output confirmed by pattern check (phones, emails, licence, visa)");
         }
         return facts;
+    }
+
+    # ----- duplicate-offer detector: same wording, different numbers (graph walk over earlier offers) -----
+
+    def find_reposts {
+        fx = self.st.facts;
+        if fx is None {
+            return;
+        }
+        official: list[str] = self.st.agency.phones if (self.st.agency is not None and self.register_status == RegisterStatus.VERIFIED) else [];
+        fphones: list[str] = fx.phones;
+        mine_contacts = set([normalise_phone(p) for p in fphones if normalise_phone(p) and normalise_phone(p) not in official]);
+        mine = _norm_text(self.text);
+        for o in [root -->[?:Offer]] {
+            if _norm_text(o.text) == mine {
+                continue;
+            }
+            sim = text_similarity(self.text, o.text);
+            if sim < 0.8 {
+                continue;
+            }
+            theirs = set([c.value for c in [o -->[?:Contact]]]);
+            if theirs == mine_contacts {
+                continue;
+            }
+            line = f"{int(sim * 100)}% same wording as an offer checked on {o.created_at} (verdict {o.verdict or 'n/a'}) that used {', '.join(sorted(theirs)) or 'only registered numbers'}";
+            self.log("Duplicate Detector", "repost", line);
+            self.repost_flags.append(
+                RedFlag(code="REPOST", title="Same ad reposted with different contact numbers", points=20, evidence=line,
+                    explanation="Scammers copy a real or earlier ad and swap in their own phone numbers. Contact the agency only on its registered numbers from the SLBFE register.",
+                    source=SRC_COMMUNITY, agent="Duplicate Detector")
+            );
+            return;
+        }
+        self.log("Duplicate Detector", "repost", "no earlier ad with the same wording but different numbers");
     }
 
     def ensure_register_checked {
@@ -674,6 +717,7 @@ walker:pub Investigate {
         }
         self.log("Lead Investigator", "findings", notes.summary);
         self.ensure_register_checked();
+        self.find_reposts();
 
         if self.questions and not self.answers {
             self.log("Supervisor", "pause", f"needs {len(self.questions)} answer(s) from the person before the verdict");
@@ -710,7 +754,7 @@ walker:pub Investigate {
             soft.extend([soft_to_red(s, name) for s in res]);
         }
 
-        hard = self.register_flags + self.community_flags + rule_flags(facts) + salary_flag(facts.salary_amount, facts.salary_currency, facts.job_title, self.text);
+        hard = self.register_flags + self.community_flags + self.repost_flags + rule_flags(facts) + salary_flag(facts.salary_amount, facts.salary_currency, facts.job_title, self.text);
         candidates = dedupe(hard + soft);
         (kept, removed) = critic(candidates, self.text + "\n" + "\n".join(self.answers));
         for r in removed {

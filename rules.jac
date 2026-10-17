@@ -3,6 +3,7 @@
 The LLM never decides licence status or points. Code does.
 """
 import re;
+import from datetime { datetime }
 
 obj RedFlag {
     has code: str,
@@ -149,6 +150,44 @@ def salary_flag(amount: float, currency: str, job_title: str, text: str) -> list
         source=SRC_SALARY, agent="Rules engine")];
 }
 
+"""Licence-expiry check from the register's 'Valid upto' date (e.g. 14-May-2027). today = YYYY-MM-DD."""
+def licence_expiry_flag(valid_upto: str, agency_name: str, today: str) -> list[RedFlag] {
+    try {
+        end = datetime.strptime(valid_upto.strip(), "%d-%b-%Y");
+        now = datetime.strptime(today, "%Y-%m-%d");
+    } except Exception {
+        return [];
+    }
+    days = (end - now).days;
+    if days < 0 {
+        return [RedFlag(code="LICENCE_EXPIRED", title="Agency licence has expired", points=35,
+            evidence=f"{agency_name}: licence valid until {valid_upto}",
+            explanation="The SLBFE register shows this agency's licence end date has passed. An agency may not recruit without a valid licence; ask SLBFE (1989) whether a renewal is pending before paying.",
+            source=SRC_REGISTER, agent="Supervisor")];
+    }
+    if days <= 30 {
+        return [RedFlag(code="LICENCE_EXPIRING", title="Agency licence expires within 30 days", points=10,
+            evidence=f"{agency_name}: licence valid until {valid_upto} ({days} days left)",
+            explanation="Recruitment takes weeks. If the licence lapses before you travel you may lose SLBFE protection. Ask whether the renewal has been filed.",
+            source=SRC_REGISTER, agent="Supervisor")];
+    }
+    return [];
+}
+
+"""Word 3-gram Jaccard similarity (0..1) between two offer texts; digits are ignored so the same ad with new numbers still matches."""
+def text_similarity(a: str, b: str) -> float {
+    def grams(t: str) -> set[str] {
+        words = re.sub(r"[^a-z ]+", " ", t.lower()).split();
+        return set([" ".join(words[i:i + 3]) for i in range(max(len(words) - 2, 0))]);
+    }
+    ga = grams(a);
+    gb = grams(b);
+    if not ga or not gb {
+        return 0.0;
+    }
+    return len(ga & gb) / len(ga | gb);
+}
+
 """Critic: keep a flag only if its evidence is literally in the offer (register/community flags are exempt)."""
 def critic(flags: list[RedFlag], text: str) -> tuple[list[RedFlag], list[str]] {
     kept: list[RedFlag] = [];
@@ -242,6 +281,20 @@ test "salary bait rule" {
     assert len(salary_flag(2500.0, "USD", "Security guard", "no experience")) == 1;
     assert len(salary_flag(2000.0, "QAR", "Light vehicle driver", "")) == 0;
     assert len(salary_flag(3000.0, "USD", "Software engineer", "5 years experience")) == 0;
+}
+
+test "licence expiry rule" {
+    assert licence_expiry_flag("14-May-2027", "ATC", "2026-10-17") == [];
+    assert licence_expiry_flag("01-Nov-2026", "ATC", "2026-10-17")[0].code == "LICENCE_EXPIRING";
+    assert licence_expiry_flag("01-Oct-2026", "ATC", "2026-10-17")[0].code == "LICENCE_EXPIRED";
+    assert licence_expiry_flag("not a date", "ATC", "2026-10-17") == [];
+}
+
+test "duplicate detector similarity ignores changed numbers" {
+    a = "URGENT HIRING IT data entry jobs in Thailand salary USD 1500 free accommodation pay processing fee WhatsApp 0765551234";
+    b = "URGENT HIRING IT data entry jobs in Thailand salary USD 1800 free accommodation pay processing fee WhatsApp 0771112222";
+    assert text_similarity(a, b) > 0.8;
+    assert text_similarity(a, "Qatar light vehicle driver employment visa contract before departure") < 0.1;
 }
 
 test "scoring bands" {
