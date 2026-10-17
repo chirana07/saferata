@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  saferata:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - LC_ALL=en_US.UTF-8
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: unless-stopped
