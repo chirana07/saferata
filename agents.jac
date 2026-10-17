@@ -116,7 +116,8 @@ walker:pub Investigate {
         register_flags: list[RedFlag] = [],
         community: list[str] = [],
         community_flags: list[RedFlag] = [],
-        questions: list[str] = [];
+        questions: list[str] = [],
+        result: CaseReport | None = None;
 
     def log(agent: str, action: str, detail: str) {
         self.steps.append(Step(agent=agent, action=action, detail=detail));
@@ -355,8 +356,9 @@ walker:pub Investigate {
 
         if self.questions and not self.answers {
             self.log("Supervisor", "pause", f"needs {len(self.questions)} answer(s) from the person before the verdict");
-            report CaseReport(status="needs_input", questions=self.questions, steps=self.steps, facts=facts,
+            self.result = CaseReport(status="needs_input", questions=self.questions, steps=self.steps, facts=facts,
                 agency=self.agency, register_status=self.register_status.name);
+            report self.result;
             disengage;
         }
 
@@ -409,10 +411,11 @@ walker:pub Investigate {
         if self.community {
             sources.append(Source(name=SRC_COMMUNITY, detail=" ".join(self.community)));
         }
-        report CaseReport(status="done", band=sc.band, score=sc.total, hard_points=sc.hard_points, soft_points=sc.soft_points,
+        self.result = CaseReport(status="done", band=sc.band, score=sc.total, hard_points=sc.hard_points, soft_points=sc.soft_points,
             flags=final, removed=removed, prosecution=prosecution, defence=defence, judge=ruling.summary, advice=advice,
             agency=self.agency, register_status=self.register_status.name, community=self.community, alerts_sent=alerts,
             facts=facts, sources=sources, steps=self.steps, offer_id=offer_id);
+        report self.result;
     }
 }
 

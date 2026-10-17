@@ -133,11 +133,12 @@ walker:pub PostJob {
         ag = reg.records[0];
         steps.append(Step(agent="Gatekeeper", action="verified", detail=f"{ag.name}, valid until {ag.valid_upto}"));
         text = f"{ag.name} (SLBFE Licence No {ag.licence_no})\nJob: {self.title} - {self.country}\nSalary: {self.salary}\n{self.description}\nContact: {self.contact_phone}";
-        res = root spawn Investigate(text=text, answers=["This job was posted directly on the SafeRata job board by the licensed agency; answer from the posting only."]);
+        inv = Investigate(text=text, answers=["This job was posted directly on the SafeRata job board by the licensed agency; answer from the posting only."]);
+        root spawn inv;
         job = Job(title=self.title, country=self.country, salary=self.salary, description=self.description,
             licence_no=ag.licence_no, agency_name=ag.name, contact_phone=self.contact_phone, posted_at=_now());
-        if res.reports {
-            c: CaseReport = res.reports[0];
+        c = inv.result;
+        if c is not None {
             steps.extend(c.steps);
             job.band = c.band;
             job.score = c.score;
