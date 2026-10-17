@@ -3,6 +3,7 @@ and workers add evidence-backed reviews that a Review Verifier agent checks.
 
 Root ─▶ Job ─▶ Review          Agency ─▶ Job          Job ─▶ Contact (shared with pasted offers)
 """
+import re;
 import from datetime { datetime }
 import from models { llm }
 import from graph { Agency, Contact, Offer, Alert }
@@ -317,6 +318,87 @@ walker:pub ListAgencies {
         for a in [root -->[?:Agency]] {
             report agency_view(a);
         }
+    }
+}
+
+obj ContactCheckResult {
+    has value: str,
+        status: str,
+        agency_name: str = "",
+        licence_no: str = "",
+        valid_upto: str = "",
+        earlier_checks: int = 0,
+        danger_checks: int = 0,
+        message: str = "";
+}
+
+"""Quick Recruiter Phone Search: checks a contact against official agencies, known impersonators, and community checks."""
+walker:pub CheckContact {
+    has value: str;
+
+    can check with Root entry {
+        raw = self.value.strip();
+        phone = normalise_phone(raw) if re.search(r"\d{9}", re.sub(r"\D", "", raw)) else raw.lower().strip();
+        if not phone {
+            report ContactCheckResult(value=raw, status="unverified", message="Please enter a valid phone number or email address.");
+            disengage;
+        }
+
+        # 1. Check if registered to an official agency
+        for a in [root -->[?:Agency]] {
+            norm_phones = [normalise_phone(p) for p in a.phones if normalise_phone(p)];
+            if phone in norm_phones or (a.email and phone == a.email.lower().strip()) {
+                report ContactCheckResult(
+                    value=phone,
+                    status="official_agency",
+                    agency_name=a.name,
+                    licence_no=a.licence_no,
+                    valid_upto=a.valid_upto,
+                    message=f"Verified official contact for {a.name} (SLBFE Licence {a.licence_no})."
+                );
+                disengage;
+            }
+        }
+
+        # 2. Check if flagged in any Agency impersonator list
+        for a in [root -->[?:Agency]] {
+            v = agency_view(a);
+            if phone in [normalise_phone(p) for p in v.impersonator_numbers]:
+                report ContactCheckResult(
+                    value=phone,
+                    status="flagged_impersonator",
+                    agency_name=a.name,
+                    licence_no=a.licence_no,
+                    message=f"CRITICAL WARNING: This contact was flagged by workers for impersonating {a.name} (Licence {a.licence_no}). Do not transfer funds!"
+                );
+                disengage;
+            }
+        }
+
+        # 3. Check community investigations
+        found = [c for c in [root -->[?:Contact]] if c.value == phone];
+        if found {
+            ct = found[0];
+            offers = [o for o in [ct <--[?:Offer]]];
+            danger = [o for o in offers if o.verdict == "DANGER"];
+            if len(danger) > 0 {
+                report ContactCheckResult(
+                    value=phone,
+                    status="community_danger",
+                    earlier_checks=len(offers),
+                    danger_checks=len(danger),
+                    message=f"CAUTION: This contact appeared in {len(offers)} earlier check(s), with {len(danger)} judged DANGER."
+                );
+                disengage;
+            }
+        }
+
+        # 4. Unverified contact
+        report ContactCheckResult(
+            value=phone,
+            status="unverified",
+            message=f"Unregistered Contact: '{phone}' is not registered to any licensed agency on file. Unofficial agents operate outside SLBFE legal protection."
+        );
     }
 }
 

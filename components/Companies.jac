@@ -1,7 +1,7 @@
 """Companies list + company page, ported from the layout-coder design; live SLBFE register data and graph-derived relations."""
 
-import from "lucide-react" { ArrowLeft, Flag }
-import from jobboard { ListAgencies, AddReview, AgencyView, JobView, ReviewView, PostResult }
+import from "lucide-react" { ArrowLeft, Flag, Phone, ShieldCheck, ShieldAlert, AlertTriangle, Search, X }
+import from jobboard { ListAgencies, AddReview, AgencyView, JobView, ReviewView, PostResult, CheckContact, ContactCheckResult }
 import from .ui { risk_of, SafetyIndicator, VerifyBadge, LiveTag, EmptyState, PageHeader }
 
 obj ReportRow {
@@ -41,7 +41,22 @@ def:pub Companies(refresh: int) -> JsxElement {
         text: str = "",
         evidence: str = "",
         sending: bool = False,
-        message: str = "";
+        message: str = "",
+        search_phone: str = "",
+        checking_phone: bool = False,
+        phone_result: ContactCheckResult | None = None;
+
+    async def check_recruiter_phone -> None {
+        if not search_phone.strip() {
+            return;
+        }
+        checking_phone = True;
+        result = root spawn CheckContact(value=search_phone);
+        if result.reports {
+            phone_result = result.reports[0];
+        }
+        checking_phone = False;
+    }
 
     async def load -> None {
         result = root spawn ListAgencies();
@@ -170,6 +185,100 @@ def:pub Companies(refresh: int) -> JsxElement {
 
     return <div>
         <PageHeader eyebrow="Company intelligence" title="Know who you're" accent="dealing with."><LiveTag label="Live SLBFE register"/></PageHeader>
+
+        <section className="mb-8 overflow-hidden rounded-2xl border border-primary/25 bg-card p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <span className="eyebrow flex items-center gap-1.5 text-primary">
+                        <Phone className="h-3.5 w-3.5"/> Recruiter Contact Verification
+                    </span>
+                    <h2 className="mt-1 text-xl font-bold tracking-tight">Verify a Recruiter's Phone or WhatsApp</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                        Check if a phone number belongs to an official licensed agency or was flagged in community scam reports.
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="eyebrow text-[10px] text-muted-foreground">Quick test:</span>
+                    <button onClick={lambda -> None { search_phone = "0112818268"; check_recruiter_phone(); }} className="rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium hover:border-primary hover:text-primary">
+                        0112818268 (Official)
+                    </button>
+                    <button onClick={lambda -> None { search_phone = "0789123456"; check_recruiter_phone(); }} className="rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium hover:border-risk hover:text-risk">
+                        0789123456 (Impersonator)
+                    </button>
+                    <button onClick={lambda -> None { search_phone = "0771234567"; check_recruiter_phone(); }} className="rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium hover:border-caution hover:text-foreground">
+                        0771234567 (Unverified)
+                    </button>
+                </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground"/>
+                    <input
+                        value={search_phone}
+                        onChange={lambda (e: ChangeEvent) { search_phone = e.target.value; if not e.target.value.strip() { phone_result = None; } }}
+                        placeholder="Enter recruiter's mobile, office or WhatsApp number (e.g. 077 123 4567)..."
+                        className="h-10 w-full rounded-lg border border-input bg-card pl-10 pr-10 text-sm font-mono placeholder:font-sans focus:border-primary"
+                    />
+                    {if search_phone {
+                        <button onClick={lambda -> None { search_phone = ""; phone_result = None; }} className="absolute right-3 top-3 text-muted-foreground hover:text-foreground">
+                            <X className="h-4 w-4"/>
+                        </button>
+                    }}
+                </div>
+                <button
+                    disabled={checking_phone or not search_phone.strip()}
+                    onClick={lambda { check_recruiter_phone(); }}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-xs font-bold text-primary-foreground shadow-sm transition-all hover:bg-primary-deep disabled:opacity-50">
+                    <Phone className="h-3.5 w-3.5"/> {"Checking..." if checking_phone else "Verify Recruiter"}
+                </button>
+            </div>
+
+            {if phone_result is not None {
+                <div className="mt-4 rise-in">
+                    {if phone_result.status == "official_agency" {
+                        <div className="flex items-start gap-3.5 rounded-xl border border-safe/30 bg-safe-soft p-4 text-sm">
+                            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-safe"/>
+                            <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-bold text-safe">OFFICIAL REGISTERED CONTACT</span>
+                                    <VerifyBadge state="verified" prefix="SLBFE"/>
+                                </div>
+                                <p className="mt-1 font-semibold text-foreground">{phone_result.agency_name} <span className="font-mono text-xs text-muted-foreground">{"(Licence " + phone_result.licence_no + " · Valid until " + phone_result.valid_upto + ")"}</span></p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">{phone_result.message}</p>
+                            </div>
+                        </div>
+                    } elif phone_result.status == "flagged_impersonator" {
+                        <div className="flex items-start gap-3.5 rounded-xl border border-risk/40 bg-risk-soft p-4 text-sm">
+                            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-risk"/>
+                            <div className="flex-1">
+                                <span className="font-bold text-risk">FLAGGED SCAM / IMPERSONATOR</span>
+                                <p className="mt-1 font-semibold text-foreground">{phone_result.message}</p>
+                                <p className="mt-1 text-xs font-semibold text-risk">Do NOT deposit money or give your passport to anyone using this number.</p>
+                            </div>
+                        </div>
+                    } elif phone_result.status == "community_danger" {
+                        <div className="flex items-start gap-3.5 rounded-xl border border-risk/40 bg-risk-soft p-4 text-sm">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-risk"/>
+                            <div className="flex-1">
+                                <span className="font-bold text-risk">COMMUNITY ALERT: FLAGGED IN DANGEROUS OFFERS</span>
+                                <p className="mt-1 text-xs leading-relaxed text-foreground">{phone_result.message}</p>
+                            </div>
+                        </div>
+                    } else {
+                        <div className="flex items-start gap-3.5 rounded-xl border border-caution/40 bg-caution-soft p-4 text-sm">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-foreground"/>
+                            <div className="flex-1">
+                                <span className="font-bold text-foreground">UNREGISTERED PERSONAL NUMBER</span>
+                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{phone_result.message}</p>
+                                <p className="mt-1 text-xs font-semibold text-primary-deep">Tip: Always request the agency's official landline or call SLBFE 1989 before paying any fee.</p>
+                            </div>
+                        </div>
+                    }}
+                </div>
+            }}
+        </section>
+
         {if len(agencies) == 0 {
             <EmptyState title="No agencies verified yet" body="Agencies appear here after a check or a job posting finds them on the SLBFE register."/>
         } else {
