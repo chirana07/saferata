@@ -169,15 +169,24 @@ def critic(flags: list[RedFlag], text: str) -> tuple[list[RedFlag], list[str]] {
     return (kept, removed);
 }
 
+"""Drop repeats: same title, or an agent flag quoting evidence another flag already covers."""
 def dedupe(flags: list[RedFlag]) -> list[RedFlag] {
-    seen: set[str] = set();
+    seen_titles: set[str] = set();
+    seen_evidence: set[str] = set();
     out: list[RedFlag] = [];
     for f in flags {
         key = _norm(f.title)[:40];
-        if key in seen {
+        ev = _norm(f.evidence);
+        if key in seen_titles {
             continue;
         }
-        seen.add(key);
+        if f.source == SRC_AGENT and ev and ev in seen_evidence {
+            continue;
+        }
+        seen_titles.add(key);
+        if ev {
+            seen_evidence.add(ev);
+        }
         out.append(f);
     }
     return out;
@@ -213,6 +222,13 @@ test "evidence critic matches verbatim quotes loosely" {
     text = "Pay Rs. 350,000 to my account 1234 before Friday!";
     assert evidence_in_text("pay rs 350,000 to my account", text);
     assert not evidence_in_text("passport will be kept", text);
+}
+
+test "dedupe drops agent flags repeating covered evidence" {
+    hard = RedFlag(code="PASSPORT", title="Employer keeps your passport", points=25, evidence="Sponsor will keep passport", explanation="", source=SRC_GUIDANCE, agent="");
+    soft = RedFlag(code="AGENT", title="Passport Confiscation", points=10, evidence="Sponsor will keep passport", explanation="", source=SRC_AGENT, agent="");
+    other = RedFlag(code="AGENT", title="Pressure to pay", points=5, evidence="Only 5 seats left", explanation="", source=SRC_AGENT, agent="");
+    assert len(dedupe([hard, soft, other])) == 2;
 }
 
 test "scoring bands" {

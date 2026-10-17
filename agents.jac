@@ -239,7 +239,7 @@ walker:pub Investigate {
         if self.register_status == RegisterStatus.NOT_FOUND {
             self.register_flags.append(
                 RedFlag(code="NOT_LICENSED", title="Agency is not on the SLBFE register", points=40,
-                    evidence=claimed or "no agency named",
+                    evidence=claimed or "No agency name or SLBFE licence number given",
                     explanation="Only SLBFE-licensed agencies may recruit for foreign jobs. An unlicensed recruiter is illegal and you have no protection.",
                     source=SRC_REGISTER, agent="Lead Investigator")
             );
@@ -415,7 +415,8 @@ walker:pub Investigate {
 
         sources = [Source(name=SRC_GUIDANCE, detail=GENERAL_GUIDANCE, url="https://www.slbfe.lk")];
         if self.register_status != RegisterStatus.NOT_CHECKED {
-            sources.insert(0, Source(name=SRC_REGISTER, detail=f"status {self.register_status.name}, checked {self.register_checked_at}", url="https://applications.slbfe.lk/feb/la/la_main.asp"));
+            reg_detail = f"status {self.register_status.name}, checked {self.register_checked_at}" if self.register_checked_at else "no agency name or licence number in the offer to look up";
+            sources.insert(0, Source(name=SRC_REGISTER, detail=reg_detail, url="https://applications.slbfe.lk/feb/la/la_main.asp"));
         }
         if self.community {
             sources.append(Source(name=SRC_COMMUNITY, detail=" ".join(self.community)));
